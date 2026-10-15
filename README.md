@@ -200,7 +200,7 @@ It's only a launcher. The hard work is done by:
 - [pygame](https://www.pygame.org/) and [SDL](https://www.libsdl.org/), for the display and controller input, including SDL's controller database
 - [BlueZ](http://www.bluez.org/), the Linux Bluetooth stack
 
-None of these are bundled with Lunapad. You install them separately, under their own licences.
+None of these are bundled in this repo, and each keeps its own licence. You install Moonlight and Sunshine yourself (see Installation). `install.sh` installs pygame (with SDL) and BlueZ from Raspberry Pi OS's own package repository, using `apt`.
 
 ## Licence
 
