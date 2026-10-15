@@ -27,7 +27,10 @@ stage="$(mktemp -d)"
 cp lunapad.py settings.py bluetooth_icon.png splash.png deploy/remote-deploy.sh "$stage/"
 echo "dev $(git describe --tags --always --dirty 2>/dev/null || echo unknown) $(date +%Y-%m-%d)" > "$stage/BUILD"
 tar -czf "$stage.tgz" -C "$stage" .
-ssh "$PI" "rm -rf /tmp/lunapad-dev && mkdir -p /tmp/lunapad-dev && tar -xzf - -C /tmp/lunapad-dev" < "$stage.tgz"
+# A private folder (mktemp -d, mode 0700) on the Pi: a fixed /tmp name could be
+# swapped by another account before sudo runs remote-deploy.sh from there.
+remote="$(ssh "$PI" 'd="$(mktemp -d)" && tar -xzf - -C "$d" && echo "$d"' < "$stage.tgz")"
 rm -rf "$stage" "$stage.tgz"
+case "$remote" in /tmp/*) ;; *) echo "FAIL: unexpected temp folder on the Pi: $remote"; exit 1 ;; esac
 
-ssh -t "$PI" "sudo bash /tmp/lunapad-dev/remote-deploy.sh; rc=\$?; rm -rf /tmp/lunapad-dev; exit \$rc"
+ssh -t "$PI" "sudo bash '$remote/remote-deploy.sh'; rc=\$?; rm -rf '$remote'; exit \$rc"
