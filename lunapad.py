@@ -858,7 +858,7 @@ def check_updates_background():
             env=APT_ENV, timeout=600,
         )
         result = subprocess.run(["apt", "list", "--upgradable"], capture_output=True, text=True)
-        lines = [l for l in result.stdout.splitlines() if "/" in l]
+        lines = [line for line in result.stdout.splitlines() if "/" in line]
         pending_updates = len(lines)
         save_update_state(pending_updates)
     except Exception:
@@ -1648,7 +1648,7 @@ def choice_popup(title_text, options, draw_bg=None):
 
         btn_y = pad_y + title_surf.get_height() + 30
         btn_x = pad_x
-        for i, (label, surf) in enumerate(zip(options, btn_surfs)):
+        for i, (label, surf) in enumerate(zip(options, btn_surfs, strict=True)):
             btn_w = surf.get_width() + btn_pad * 2
             btn_h = surf.get_height() + btn_pad
             rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
