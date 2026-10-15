@@ -19,6 +19,8 @@ BUILD = _read_build()
 VERSION_TEXT = f"Lunapad {__version__}" + (f" ({BUILD})" if BUILD else "")
 # the dashboard's short form, next to the title: the build without its date
 _build_short = re.sub(r"\s+\d{4}-\d{2}-\d{2}$", "", BUILD)
+if _build_short == f"v{__version__}":  # a stable release: the tag says nothing more
+    _build_short = ""
 VERSION_SHORT = f"v{__version__}" + (f" ({_build_short})" if _build_short else "")
 
 # Settings live in ~/.config/lunapad/lunapad.toml (see settings.py); these few are read once
