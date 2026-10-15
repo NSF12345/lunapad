@@ -1,0 +1,12 @@
+# Lint rules for the PR checks (.github/workflows/checks.yml). Real problems only:
+# syntax errors, undefined names, unused imports/variables (F, E), likely bugs (B).
+target-version = "py311"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "B"]
+ignore = ["E401"]  # this codebase keeps related imports on one line
+
+[lint.per-file-ignores]
+# these set SDL/settings environment variables before importing pygame / lunapad
+"tools/*" = ["E402"]
+"deploy/check_controllers.py" = ["E402"]

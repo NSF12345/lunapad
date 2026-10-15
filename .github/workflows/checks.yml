@@ -1,0 +1,54 @@
+# Lint and security checks on every pull request into beta or main.
+# Make the jobs required in the branch rulesets so a failing PR can't be merged.
+name: Checks
+
+on:
+  pull_request:
+    branches: [beta, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python (ruff, compile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"  # Raspberry Pi OS trixie's Python
+      - run: pip install ruff
+      - run: ruff check --output-format github .
+      - run: python -m py_compile lunapad.py settings.py deploy/*.py tools/*.py
+
+  shell:
+    name: Shell (shellcheck, sudoers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck install.sh uninstall.sh deploy/*.sh deploy/bash_profile .github/scripts/*.sh
+      - name: Sudoers template is valid
+        # filled in the way install.sh does it; a broken sudoers file can lock out sudo
+        run: |
+          sed -e 's|__USER__|lunapad|g' -e 's|__APPDIR__|/opt/lunapad|g' deploy/sudoers-lunapad > /tmp/sudoers
+          sudo visudo -cf /tmp/sudoers
+
+  private-details:
+    name: No private details
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash .github/scripts/check-private-details.sh
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # scan every commit in the PR, not just the last
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
