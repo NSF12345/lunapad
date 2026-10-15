@@ -600,6 +600,17 @@ def refresh_host_status():
         except Exception:
             host_reachable = False
 
+# Moonlight's working folder. It writes eglfs_override_XXXXXX.conf files there and
+# leaves them behind; a private folder (not the shared /tmp, where other accounts could
+# plant files) that is emptied of them on every start.
+MOONLIGHT_CWD = os.path.join(cfg.CACHE_DIR, "moonlight")
+try:
+    os.makedirs(MOONLIGHT_CWD, mode=0o700, exist_ok=True)
+    for _f in glob.glob(os.path.join(MOONLIGHT_CWD, "eglfs_override_*.conf")):
+        os.remove(_f)
+except OSError as e:
+    print(f"Couldn't prepare {MOONLIGHT_CWD}: {e}")
+
 def moonlight_env():
     """Environment for background moonlight-qt commands (list, pair, quit,
     --version): Qt's offscreen platform, and WITHOUT the launcher's own
@@ -641,11 +652,11 @@ host_paired = None  # True / False once `moonlight-qt list` has told us, None = 
 def _run_moonlight_list(args, timeout):
     """`moonlight-qt list [args] HOST`, or None if it failed or timed out.
     Qt must use the offscreen platform (by default it grabs the DRM display,
-    which this launcher holds); /tmp as cwd keeps its eglfs_override files out of ~."""
+    which this launcher holds); MOONLIGHT_CWD collects its eglfs_override files."""
     env = moonlight_env()
     try:
         return subprocess.run(["moonlight-qt", "list", *args, MOONLIGHT_HOST], capture_output=True, text=True,
-                              timeout=timeout, env=env, cwd="/tmp", stdin=subprocess.DEVNULL)
+                              timeout=timeout, env=env, cwd=MOONLIGHT_CWD, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired as e:
         def as_text(x):  # partial output can come back as bytes even with text=True
             return x.decode(errors="replace") if isinstance(x, bytes) else (x or "")
@@ -775,7 +786,7 @@ def check_moonlight_version():
     global moonlight_version, _version_checking
     try:
         result = subprocess.run(["moonlight-qt", "--version"], capture_output=True, text=True, timeout=15,
-                                env=moonlight_env(), cwd="/tmp",
+                                env=moonlight_env(), cwd=MOONLIGHT_CWD,
                                 stdin=subprocess.DEVNULL)
         m = re.search(r"Moonlight\s+(\d+)\.(\d+)\.(\d+)", result.stdout + result.stderr)
         moonlight_version = tuple(int(x) for x in m.groups()) if m else None
@@ -1268,9 +1279,7 @@ def show_status_popup(message, draw_bg=None):
 def launch(cmd):
     global screen
     pygame.quit()
-    # Moonlight writes eglfs_override_XXXXXX.conf into its working dir and
-    # leaves them behind - run it from /tmp so they don't pile up in ~.
-    subprocess.call(cmd, cwd="/tmp")
+    subprocess.call(cmd, cwd=MOONLIGHT_CWD)  # see MOONLIGHT_CWD for why not ~ or /tmp
     pygame.init()
     init_input()
     screen = pygame.display.set_mode(RESOLUTION or (0, 0), pygame.FULLSCREEN)
@@ -2194,7 +2203,7 @@ def quit_running_app(name):
     env = moonlight_env()
     try:
         subprocess.run(["moonlight-qt", "quit", MOONLIGHT_HOST], capture_output=True, text=True,
-                       timeout=30, env=env, cwd="/tmp", stdin=subprocess.DEVNULL)
+                       timeout=30, env=env, cwd=MOONLIGHT_CWD, stdin=subprocess.DEVNULL)
     except Exception as e:
         print(f"moonlight-qt quit failed: {e}")
     refresh_host_status()
@@ -2213,7 +2222,7 @@ def moonlight_list_status(target):
     try:
         result = subprocess.run(["moonlight-qt", "list", target], capture_output=True, text=True,
                                 timeout=30, env=moonlight_env(),
-                                cwd="/tmp", stdin=subprocess.DEVNULL)
+                                cwd=MOONLIGHT_CWD, stdin=subprocess.DEVNULL)
     except Exception:
         return "unreachable", None
     if NOT_PAIRED_TEXT in result.stdout + result.stderr:
@@ -2272,7 +2281,7 @@ def run_pairing(draw_bg=None):
     pin = f"{random.randint(0, 9999):04d}"
     proc = subprocess.Popen(["moonlight-qt", "pair", target, "--pin", pin],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
-                            env=moonlight_env(), cwd="/tmp")
+                            env=moonlight_env(), cwd=MOONLIGHT_CWD)
     # Don't rely on `pair` exiting - it can sit on a hidden dialog. A background
     # thread asks `list` every few seconds; as soon as it works, we're paired.
     watch = {"paired": False, "stop": False}

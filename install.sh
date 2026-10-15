@@ -49,7 +49,7 @@ if [ ! -f "${BASH_SOURCE[0]:-}" ]; then   # piped in (curl ... | sudo bash): fet
     exit "$rc"
 fi
 
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"   # physical path: git's safe.directory compares real paths
 [ -f "$SRC/lunapad.py" ] || { echo "Run this from a Lunapad checkout ($SRC has no lunapad.py)"; exit 1; }
 
 say "Packages"
@@ -70,7 +70,10 @@ id "$APP_USER"
 fi
 
 say "Code: $APP_DIR"
-git_() { git -c safe.directory='*' "$@"; }   # the source checkout may belong to another user
+# git refuses repos owned by another user when run as root (their config could make it
+# run commands). Trust exactly the two this script uses: the source checkout (often the
+# admin's own clone) and $APP_DIR - nothing else.
+git_() { git -c safe.directory="$SRC" -c safe.directory="$APP_DIR" "$@"; }
 if [ "$SRC" != "$APP_DIR" ]; then
     if [ -d "$APP_DIR/.git" ]; then
         git_ -C "$APP_DIR" fetch --tags --force "$SRC" '+refs/heads/*:refs/remotes/source/*'
