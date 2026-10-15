@@ -54,7 +54,7 @@ Gamepad-only Moonlight launcher on a Raspberry Pi 4 (pygame, `SDL_VIDEODRIVER=km
 
 ## Todo
 
-1. First tagged release is **v0.7.0** (no v0.6.0 tag, so every tagged release can update itself): once self-update is tested on the Pi via `beta`, bump `__version__` to 0.7.0, the user merges `beta` into `main` and tags `v0.7.0`
+1. First tagged release is **v0.7.0** (deliberately no v0.6.0 tag, so every tagged release can update itself). Once `beta` is merged into `main`, the user tags the merge commit `v0.7.0`; then test the Stable channel on the Pi
 
 ## Git
 
