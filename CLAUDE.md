@@ -9,7 +9,8 @@ Gamepad-only Moonlight launcher on a Raspberry Pi 4 (pygame, `SDL_VIDEODRIVER=km
 
 ## Install and deploy
 
-- **Install / repair / update to committed code:** `bash deploy/install-on-pi.sh` (sends the repo as a git bundle, runs `sudo ./install.sh` on the Pi). `install.sh` is idempotent: packages, the `lunapad` account and groups (video, render, input, audio, bluetooth, tty), `/opt/lunapad` checked out at `LUNAPAD_REF` / the latest tag / the source's HEAD, `BUILD`, the login loop, sudoers (template filled in, `visudo`-checked), apt config, tty1 autologin override, then restarts `getty@tty1`.
+- **Install / repair / update to committed code:** `bash deploy/install-on-pi.sh` (sends the repo as a git bundle, runs `sudo ./install.sh` on the Pi). `install.sh` is idempotent: packages, the `lunapad` account and groups (video, render, input, audio, bluetooth, tty), `/opt/lunapad` checked out at `LUNAPAD_REF` / the highest `vX.Y.Z` tag / the source's HEAD, the system files copied from that installed version, `BUILD`, the login loop, sudoers (template filled in, `visudo`-checked), apt config, tty1 autologin override, then restarts `getty@tty1`.
+- **Public install:** `curl -fsSL https://raw.githubusercontent.com/NSF12345/lunapad/main/install.sh | sudo bash`. Piped in, `install.sh` clones the repo into a temp folder and re-runs itself from there. Its body is inside `main()`, so a cut-off download never runs.
 - **Dev deploy of the working copy:** `bash deploy/deploy.sh`. It uploads a tarball, then `deploy/remote-deploy.sh` runs as root on the Pi:
   1. `py_compile` everything before copying anything into `/opt/lunapad`; note the mtime
   2. `pkill -9 -u lunapad` the launcher. The `lunapad` account's tty1 loop relaunches it (can take more than 6s, so it polls for up to 30s).

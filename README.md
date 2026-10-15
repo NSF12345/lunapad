@@ -71,37 +71,58 @@ Check the version with `moonlight-qt --version`. You need **6.2.0 or newer**: ol
 
 ### 4. Install Lunapad
 
-`install.sh` does everything else:
+On the Pi (over SSH, or with a keyboard plugged in), as your admin account:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/NSF12345/lunapad/main/install.sh | sudo bash
+```
+
+That downloads the installer and runs it as root. It fetches the repo into a temporary folder, installs the **latest release**, and cleans up after itself.
+
+**Or clone it yourself**, to read `install.sh` before running it:
+
+```sh
+sudo apt-get install -y git
+git clone https://github.com/NSF12345/lunapad.git
+less lunapad/install.sh        # optional: read it first
+sudo ./lunapad/install.sh
+rm -rf lunapad                 # the installed copy lives in /opt/lunapad
+```
+
+Either way, the installer:
 - installs the packages it needs (`python3-pygame`, `fbi`, `bluez`, `git`)
 - creates the `lunapad` account
-- puts the code in `/opt/lunapad`
+- puts the latest release in `/opt/lunapad`
 - sets up its login loop, sudo rules and console autologin
-- starts it
+- starts it on the TV
 
-It's safe to run again; that repairs or updates the install.
+To preset the gaming PC and skip the first-run host setup, add `LUNAPAD_HOST`: `... | sudo LUNAPAD_HOST=<pc> bash`, or `sudo LUNAPAD_HOST=<pc> ./lunapad/install.sh`.
 
-Run it from a PC with this repo, in Git Bash. Give the Pi as `PI=user@host`, or save `user@host` once in `deploy/pi-target` (git-ignored):
-
-```sh
-bash deploy/install-on-pi.sh
-```
-
-That sends the repo's committed history to the Pi and runs `sudo ./install.sh` there. It asks for the Pi password for the upload and for the session, then for `sudo`.
-
-On the Pi itself, from a clone of the repo:
-
-```sh
-sudo ./install.sh
-```
+It's safe to run again; that repairs the install. Later, without a clone: `sudo /opt/lunapad/install.sh`.
 
 ### 5. First start
 
 1. The TV shows the splash, then the dashboard.
-2. The dashboard shows **Set up host**. Press A and type the gaming PC's hostname or IP with the on-screen keyboard. **123** / **ABC** (or Y) switches between the number pad and the full keyboard, and RB types a `.`. Lunapad restarts with it. (To skip this, set it at install time: `LUNAPAD_HOST=<pc> bash deploy/install-on-pi.sh`, or `sudo LUNAPAD_HOST=<pc> ./install.sh`.) You can change it later in **Settings** → **Host address**.
+2. The dashboard shows **Set up host**. Press A and type the gaming PC's hostname or IP with the on-screen keyboard. **123** / **ABC** (or Y) switches between the number pad and the full keyboard, and RB types a `.`. Lunapad restarts with it. (To skip this, set it at install time with `LUNAPAD_HOST`; see step 4.) You can change it later in **Settings** → **Host address**.
 3. The dashboard shows **Pair with Sunshine**. Press A, then enter the PIN shown on the TV in Sunshine's web page (`https://<pc>:47990` → **PIN**).
 4. Your PC's apps appear as tiles. Pick one and play.
 
 The Settings page shows the installed version at the top.
+
+### Updating
+
+Lunapad updates itself: when a new release is out, the **Update** button shows a badge and offers **Update Lunapad**. It follows the **Stable** channel (release tags) by default. Switch to **Beta** in **Settings** → **Updates** to get changes before they're released.
+
+### Installing from a PC (development)
+
+From a PC with this repo, in Git Bash, `deploy/install-on-pi.sh` sends the repo's committed history to the Pi and runs `install.sh` there. Give the Pi as `PI=user@host`, or save `user@host` once in `deploy/pi-target` (git-ignored). It asks for the Pi password for the upload and the session, then for `sudo`.
+
+```sh
+bash deploy/install-on-pi.sh
+LUNAPAD_REF=<branch or commit> bash deploy/install-on-pi.sh   # something other than the latest release
+```
+
+`deploy/deploy.sh` copies uncommitted changes straight into `/opt/lunapad` for quick testing.
 
 ### Uninstalling
 

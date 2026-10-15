@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Lunapad installer for Raspberry Pi OS. Run as root from a checkout of the repo:
+# Lunapad installer for Raspberry Pi OS. Run as root, straight from GitHub:
+#     curl -fsSL https://raw.githubusercontent.com/NSF12345/lunapad/main/install.sh | sudo bash
+# or from a checkout of the repo:
 #     sudo ./install.sh
+# Piped in, it first clones the repo (LUNAPAD_REPO, default the public one) into a
+# temporary folder and runs itself from there.
 # Safe to re-run: it brings everything back to the installed state ("repair").
 #
 #   - apt packages: python3-pygame, fbi, bluez, git
@@ -19,14 +23,33 @@
 # (otherwise Lunapad asks on first start; existing settings are never changed).
 set -euo pipefail
 
+# Everything runs inside main(), called on the last line: piped from curl, a
+# download cut short never runs, and a full one is read completely first.
+main() {
 APP_USER=lunapad
 APP_HOME=/home/$APP_USER
 APP_DIR=/opt/lunapad
-SRC="$(cd "$(dirname "$0")" && pwd)"
 UPDATE=0; [ "${1:-}" = "--update" ] && UPDATE=1
 
 say() { printf '\n== %s\n' "$*"; }
-[ "$(id -u)" -eq 0 ] || { echo "Run as root: sudo ./install.sh"; exit 1; }
+[ "$(id -u)" -eq 0 ] || { echo "Run as root: sudo ./install.sh, or ... | sudo bash"; exit 1; }
+
+if [ ! -f "${BASH_SOURCE[0]:-}" ]; then   # piped in (curl ... | sudo bash): fetch the repo, run from there
+    local repo="${LUNAPAD_REPO:-https://github.com/NSF12345/lunapad.git}" tmp rc=0
+    if ! command -v git >/dev/null; then
+        say "Installing git"
+        apt-get update -q
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q git
+    fi
+    tmp="$(mktemp -d)"
+    say "Fetching $repo"
+    git clone --quiet "$repo" "$tmp/lunapad"
+    bash "$tmp/lunapad/install.sh" "$@" </dev/null || rc=$?
+    rm -rf "$tmp"
+    exit "$rc"
+fi
+
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ -f "$SRC/lunapad.py" ] || { echo "Run this from a Lunapad checkout ($SRC has no lunapad.py)"; exit 1; }
 
 say "Packages"
@@ -57,7 +80,9 @@ if [ "$SRC" != "$APP_DIR" ]; then
         git_ -C "$APP_DIR" remote rename origin source
     fi
 fi
-REF="${LUNAPAD_REF:-$(git_ -C "$APP_DIR" describe --tags --abbrev=0 2>/dev/null || git_ -C "$SRC" rev-parse HEAD)}"
+# Default: the newest release (the highest vX.Y.Z tag, as the Stable channel picks), else the source's commit.
+LATEST="$(git_ -C "$APP_DIR" tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)"
+REF="${LUNAPAD_REF:-${LATEST:-$(git_ -C "$SRC" rev-parse HEAD)}}"
 git_ -C "$APP_DIR" checkout --quiet --force "$REF"
 # A self-update to anything but a release tag came from the beta channel - say so in the title.
 CHANNEL=""
@@ -70,12 +95,13 @@ chmod -R a+rX,go-w "$APP_DIR"
 echo "Installed $(cat "$APP_DIR/BUILD")"
 
 say "Boot loop, sudo rules, apt config"
-install -o "$APP_USER" -g "$APP_USER" -m 0644 "$SRC/deploy/bash_profile" "$APP_HOME/.bash_profile"
-sed -e "s|__USER__|$APP_USER|g" -e "s|__APPDIR__|$APP_DIR|g" "$SRC/deploy/sudoers-lunapad" > /tmp/lunapad_sudoers
+# From the installed version, not the source: they must match the code in $APP_DIR.
+install -o "$APP_USER" -g "$APP_USER" -m 0644 "$APP_DIR/deploy/bash_profile" "$APP_HOME/.bash_profile"
+sed -e "s|__USER__|$APP_USER|g" -e "s|__APPDIR__|$APP_DIR|g" "$APP_DIR/deploy/sudoers-lunapad" > /tmp/lunapad_sudoers
 visudo -cf /tmp/lunapad_sudoers   # a broken sudoers file can lock out sudo - check first
 install -o root -g root -m 0440 /tmp/lunapad_sudoers /etc/sudoers.d/lunapad
 rm -f /tmp/lunapad_sudoers
-install -o root -g root -m 0644 "$SRC/deploy/apt-lunapad.conf" /etc/apt/apt.conf.d/90lunapad-noprompt
+install -o root -g root -m 0644 "$APP_DIR/deploy/apt-lunapad.conf" /etc/apt/apt.conf.d/90lunapad-noprompt
 
 if [ "$UPDATE" = 1 ]; then
     echo "Done. Lunapad $(cat "$APP_DIR/BUILD") is installed; the launcher restarts into it."
@@ -109,3 +135,6 @@ say "Starting Lunapad as $APP_USER"
 pkill -f '[l]unapad/lunapad.py' || true   # whatever runs on tty1 now
 systemctl restart getty@tty1             # autologin -> the new boot loop
 echo "Done. Lunapad $(cat "$APP_DIR/BUILD") is starting on the TV."
+}
+
+main "$@"
