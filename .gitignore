@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+
+# Local only: which Pi the deploy scripts use, and private Claude notes
+deploy/pi-target
+CLAUDE.local.md
+
+# Moonlight's own config holds a private key and pairing cert - never commit it
+Moonlight.conf
+
+# tools/preview_dashboard.py output
+preview_out/

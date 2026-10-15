@@ -1,0 +1,4 @@
+# Everything deploys to Linux - keep LF even when checked out on Windows
+# (a CRLF bash_profile or sudoers file breaks the tty1 loop / sudo on the Pi).
+* text=auto eol=lf
+*.png binary
