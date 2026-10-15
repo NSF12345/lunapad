@@ -59,7 +59,12 @@ if [ "$SRC" != "$APP_DIR" ]; then
 fi
 REF="${LUNAPAD_REF:-$(git_ -C "$APP_DIR" describe --tags --abbrev=0 2>/dev/null || git_ -C "$SRC" rev-parse HEAD)}"
 git_ -C "$APP_DIR" checkout --quiet --force "$REF"
-echo "$(git_ -C "$APP_DIR" describe --tags --always) $(date +%Y-%m-%d)" > "$APP_DIR/BUILD"
+# A self-update to anything but a release tag came from the beta channel - say so in the title.
+CHANNEL=""
+if [ "$UPDATE" = 1 ] && ! git_ -C "$APP_DIR" tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' >/dev/null; then
+    CHANNEL="beta "
+fi
+echo "$CHANNEL$(git_ -C "$APP_DIR" describe --tags --always) $(date +%Y-%m-%d)" > "$APP_DIR/BUILD"
 chown -R root:root "$APP_DIR"
 chmod -R a+rX,go-w "$APP_DIR"
 echo "Installed $(cat "$APP_DIR/BUILD")"
