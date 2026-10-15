@@ -85,11 +85,13 @@ LATEST="$(git_ -C "$APP_DIR" tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.
 REF="${LUNAPAD_REF:-${LATEST:-$(git_ -C "$SRC" rev-parse HEAD)}}"
 git_ -C "$APP_DIR" checkout --quiet --force "$REF"
 # A self-update to anything but a release tag came from the beta channel - say so in the title.
-CHANNEL=""
+# A beta build shows just its commit: `git describe` would name the nearest tag in beta's
+# own history, which can be an older release than the version it's based on.
+DESCRIBE="$(git_ -C "$APP_DIR" describe --tags --always)"
 if [ "$UPDATE" = 1 ] && ! git_ -C "$APP_DIR" tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' >/dev/null; then
-    CHANNEL="beta "
+    DESCRIBE="beta $(git_ -C "$APP_DIR" rev-parse --short HEAD)"
 fi
-echo "$CHANNEL$(git_ -C "$APP_DIR" describe --tags --always) $(date +%Y-%m-%d)" > "$APP_DIR/BUILD"
+echo "$DESCRIBE $(date +%Y-%m-%d)" > "$APP_DIR/BUILD"
 chown -R root:root "$APP_DIR"
 chmod -R a+rX,go-w "$APP_DIR"
 echo "Installed $(cat "$APP_DIR/BUILD")"
