@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 import settings as cfg
 from settings import STATE_FILE, APPS_CACHE_FILE
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 APP_DIR = os.path.dirname(os.path.abspath(__file__))  # /opt/lunapad on the Pi: code and images
 
 def _read_build():
@@ -19,6 +19,8 @@ BUILD = _read_build()
 VERSION_TEXT = f"Lunapad {__version__}" + (f" ({BUILD})" if BUILD else "")
 # the dashboard's short form, next to the title: the build without its date
 _build_short = re.sub(r"\s+\d{4}-\d{2}-\d{2}$", "", BUILD)
+if _build_short == f"v{__version__}":  # a stable release: the tag says nothing more
+    _build_short = ""
 VERSION_SHORT = f"v{__version__}" + (f" ({_build_short})" if _build_short else "")
 
 # Settings live in ~/.config/lunapad/lunapad.toml (see settings.py); these few are read once
@@ -848,6 +850,7 @@ APT_ENV = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
 def check_updates_background():
     global pending_updates, checking_updates
     checking_updates = True
+    check_lunapad_update()
     try:
         subprocess.call(
             ["sudo", "-n", "/usr/bin/apt-get", "update"],
@@ -862,7 +865,52 @@ def check_updates_background():
         pass
     checking_updates = False
 
+# --- Lunapad's own updates: release tags / the beta branch on GitHub ---
+LUNAPAD_REPO = "https://github.com/NSF12345/lunapad.git"
+SELF_UPDATE = ["/bin/bash", os.path.join(APP_DIR, "deploy", "self-update.sh")]  # root-owned, via sudo
+lunapad_update = None  # {"label", "channel"} when the chosen channel points somewhere else
+
+def channel_target(channel):
+    """(label, commit) the update channel points at on GitHub, or None: the
+    highest vX.Y.Z tag for stable, the beta branch's tip for beta."""
+    result = subprocess.run(["git", "ls-remote", "--tags", "--heads", LUNAPAD_REPO],
+                            capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL,
+                            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    refs = {}
+    for line in result.stdout.splitlines():
+        sha, _, ref = line.partition("\t")
+        if ref.endswith("^{}"):
+            refs[ref[:-3]] = sha  # an annotated tag, peeled to its commit
+        else:
+            refs.setdefault(ref, sha)
+    if channel == "beta":
+        sha = refs.get("refs/heads/beta")
+        return (f"beta {sha[:7]}", sha) if sha else None
+    tags = [r[len("refs/tags/"):] for r in refs if re.fullmatch(r"refs/tags/v\d+\.\d+\.\d+", r)]
+    if not tags:
+        return None
+    best = max(tags, key=lambda t: tuple(int(n) for n in t[1:].split(".")))
+    return best[1:], refs["refs/tags/" + best]
+
+def check_lunapad_update():
+    """Sets lunapad_update if the update channel's commit isn't the one installed.
+    Switching channel can mean going back (beta -> an older stable release)."""
+    global lunapad_update
+    try:
+        channel = cfg.get("updates.channel")
+        target = channel_target(channel)
+        head = subprocess.run(["git", "-c", "safe.directory=*", "-C", APP_DIR, "rev-parse", "HEAD"],
+                              capture_output=True, text=True, timeout=10).stdout.strip()
+        lunapad_update = {"label": target[0], "channel": channel} if target and head and target[1] != head else None
+        print(f"Lunapad update check ({channel}): " + (f"{target[0]} available" if lunapad_update else "up to date"))
+    except Exception as e:
+        print(f"Lunapad update check failed: {e}")
+
+def check_lunapad_update_background():
+    threading.Thread(target=check_lunapad_update, daemon=True).start()
+
 last_check_time, pending_updates = load_update_state()
+check_lunapad_update_background()  # quick (one git ls-remote), so on every start
 if time.time() - last_check_time > CHECK_INTERVAL:
     threading.Thread(target=check_updates_background, daemon=True).start()
 
@@ -1171,10 +1219,11 @@ def draw_frame():
         rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
         tile_rects[key] = rect
         draw_tile(rect, NODES[key]["label"], selected == key, danger=(key == "reboot"))
-        if key == "update" and pending_updates > 0:
+        update_count = pending_updates + (1 if lunapad_update else 0)
+        if key == "update" and update_count > 0:
             badge_center = (rect.right - 22, rect.top + 22)
             pygame.draw.circle(screen, WARN, badge_center, 16)
-            badge_text = badge_font.render(str(pending_updates), True, (30, 20, 0))
+            badge_text = badge_font.render(str(update_count), True, (30, 20, 0))
             screen.blit(badge_text, badge_text.get_rect(center=badge_center))
         btn_x += btn_w + btn_gap
 
@@ -1260,7 +1309,7 @@ def run_apt_live(args, phase_label, log_lines):
         proc = subprocess.Popen(["sudo", "-n"] + args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, bufsize=1, env=APT_ENV)
     except OSError as e:
-        log_lines.append(f"Could not start apt-get: {e}")
+        log_lines.append(f"Could not start {' '.join(args)}: {e}")
         return -1
     draw_apt_log(phase_label, log_lines)
     pygame.display.flip()
@@ -1349,6 +1398,27 @@ def do_update():
     else:
         show_status_popup("Update complete")
         pygame.time.wait(2000)
+
+def do_lunapad_update():
+    """Runs self-update.sh for the chosen channel with live output, then exits so
+    the tty1 loop starts the new code."""
+    u = lunapad_update
+    if not confirm_popup(f"Update Lunapad to {u['label']}?",
+                         [f"From the {u['channel']} channel (change it in Settings).",
+                          "Lunapad restarts when it's done."],
+                         confirm_label="Update", cancel_label="Cancel"):
+        return
+    log_lines = []
+    rc = run_apt_live(SELF_UPDATE + [u["channel"]], f"Updating Lunapad to {u['label']}...", log_lines)
+    pygame.event.clear()
+    if rc != 0:
+        msg = f"Updating Lunapad failed (exit {rc})"
+        wait_for_dismiss(lambda: draw_apt_log(msg, log_lines, title_color=BAD, footer="A / B: close"))
+        return
+    show_status_popup("Lunapad updated - restarting")
+    pygame.time.wait(2000)
+    pygame.quit()
+    sys.exit(0)  # the login loop starts the new version
 
 def offer_autoremove():
     """After an update: if some packages are no longer needed, offers to remove
@@ -2318,9 +2388,16 @@ def activate(cmd):
             pygame.quit()
             sys.exit(99)
     elif cmd == "UPDATE":
-        title = f"{pending_updates} update(s) available" if pending_updates > 0 else "No updates currently pending"
-        choice = choice_popup(title, ["Update Now", "Show Updates", "Cancel"])
-        if choice == "Update Now":
+        system = f"{pending_updates} system update(s)" if pending_updates > 0 else "No system updates pending"
+        if lunapad_update:
+            title = f"Lunapad {lunapad_update['label']} available - {system[0].lower() + system[1:]}"
+        else:
+            title = system
+        options = (["Update Lunapad"] if lunapad_update else []) + ["Update System", "Show Updates", "Cancel"]
+        choice = choice_popup(title, options)
+        if choice == "Update Lunapad":
+            do_lunapad_update()
+        elif choice == "Update System":
             do_update()
         elif choice == "Show Updates":
             pkgs = get_pending_update_list()
@@ -2342,6 +2419,7 @@ def activate(cmd):
     elif cmd == "SETTINGS":
         run_settings_page()
         selected = None  # back on the first app tile, not the Settings chip
+        check_lunapad_update_background()  # the update channel may have changed
     elif cmd == "RELOAD_APPS":
         reload_apps()
     elif cmd == "BLUETOOTH":

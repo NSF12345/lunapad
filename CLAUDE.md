@@ -43,6 +43,7 @@ Gamepad-only Moonlight launcher on a Raspberry Pi 4 (pygame, `SDL_VIDEODRIVER=km
 - Pairing (Moonlight 6.2.0, tested on the Pi): `list` on an unpaired host prints "...has not been paired..." and exits 255. `pair HOST --pin NNNN` waits for the PIN to be entered in Sunshine, then exits 0. But `pair` on an already-paired host **hangs forever** (a hidden dialog). Run from the launcher, `pair` also didn't exit after a correct PIN. So `run_pairing()` checks with `list` first, never waits on `pair`'s exit (a background thread polls `list` every 3s and finishes as soon as it works), caps it at PAIR_TIMEOUT, and lets B cancel it (with a final `list` check). Background Moonlight commands use `moonlight_env()`: offscreen, without the launcher's `SDL_VIDEODRIVER=kmsdrm`.
 - No default host: a fresh install has `host.address = ""`, and the dashboard shows a **Set up host** tile (keyboard entry, then a restart) instead of the apps. Host-dependent checks skip themselves while it's empty. `LUNAPAD_HOST` presets it at install time (only into a new settings file).
 - Update's unused-package offer (`offer_autoremove()`, via `apt-get -s autoremove`) runs only after a successful update run, never on the Update button press (the simulation stalled the menu). To test it: `sudo apt-get install -y sl && sudo apt-mark auto sl`, then Update Now (it runs even with nothing to upgrade).
+- Self-update: the Update screen runs `sudo /bin/bash /opt/lunapad/deploy/self-update.sh stable|beta` (sudo rule: exactly those two). It fetches from the public repo, checks out the target, then `exec`s the new `install.sh --update`, which skips the account, autologin and restart steps. The launcher then exits 0 and the tty1 loop starts the new code. `self-update.sh`'s body sits inside `main()` because the checkout rewrites the file while bash is still reading it. The check (`channel_target()`) is a `git ls-remote` with no root needed, compared against `git rev-parse HEAD` in `/opt/lunapad`. A dev deploy or `install-on-pi.sh` checkout is just a different HEAD, so the next update replaces it.
 - Popups take a `draw_bg` callback so they render over the calling screen, not the dashboard.
 
 ## Working preferences
@@ -53,9 +54,9 @@ Gamepad-only Moonlight launcher on a Raspberry Pi 4 (pygame, `SDL_VIDEODRIVER=km
 
 ## Todo
 
-1. Git-based updates: tag releases (`v0.6.0`...), and have the Update button / an update script fetch the latest tag from https://github.com/NSF12345/lunapad into `/opt/lunapad` (root-owned script via a narrow sudo rule)
+1. First tagged release is **v0.7.0** (deliberately no v0.6.0 tag, so every tagged release can update itself). Once `beta` is merged into `main`, the user tags the merge commit `v0.7.0`; then test the Stable channel on the Pi
 
 ## Git
 
-- Public repo `NSF12345/lunapad`. **Never push to `main`**: work on a branch (currently `lunapad-0.6.0`), and the user merges it when they choose.
+- Public repo `NSF12345/lunapad`. **Never push to `main`**: work on feature branches, and the user merges them (into `beta`, then `main`) when they choose. The `beta` branch is what beta-channel Pis install.
 - Commits use the GitHub no-reply email. Keep private details in the git-ignored `CLAUDE.local.md` and `deploy/pi-target`.

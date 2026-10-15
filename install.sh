@@ -10,6 +10,9 @@
 #   - settings, cache and Moonlight's pairing live in /home/lunapad
 #
 # Moonlight Qt itself is NOT installed - see the README.
+# --update: what deploy/self-update.sh runs after checking out new code -
+# packages, the code's BUILD, sudo rules, login loop and apt config, but no
+# account, autologin or restart changes (the launcher restarts itself).
 # Environment: LUNAPAD_REF=<tag/branch/commit> to install something other than
 # the latest release tag (or the source's current commit if there are no tags).
 # LUNAPAD_HOST=<hostname or IP> presets the gaming PC for a new install
@@ -20,15 +23,17 @@ APP_USER=lunapad
 APP_HOME=/home/$APP_USER
 APP_DIR=/opt/lunapad
 SRC="$(cd "$(dirname "$0")" && pwd)"
+UPDATE=0; [ "${1:-}" = "--update" ] && UPDATE=1
 
 say() { printf '\n== %s\n' "$*"; }
 [ "$(id -u)" -eq 0 ] || { echo "Run as root: sudo ./install.sh"; exit 1; }
 [ -f "$SRC/lunapad.py" ] || { echo "Run this from a Lunapad checkout ($SRC has no lunapad.py)"; exit 1; }
 
 say "Packages"
-apt-get update -q
+[ "$UPDATE" = 1 ] || apt-get update -q   # an update skips this: the daily update check keeps the lists fresh
 DEBIAN_FRONTEND=noninteractive apt-get install -y -q python3-pygame fbi bluez git
 
+if [ "$UPDATE" = 0 ]; then
 say "Account: $APP_USER"
 if ! id "$APP_USER" >/dev/null 2>&1; then
     useradd --create-home --home-dir "$APP_HOME" --shell /bin/bash --comment "Lunapad" "$APP_USER"
@@ -39,6 +44,7 @@ for g in video render input audio bluetooth tty; do   # display, GPU, controller
     getent group "$g" >/dev/null && usermod -aG "$g" "$APP_USER"
 done
 id "$APP_USER"
+fi
 
 say "Code: $APP_DIR"
 git_() { git -c safe.directory='*' "$@"; }   # the source checkout may belong to another user
@@ -53,7 +59,12 @@ if [ "$SRC" != "$APP_DIR" ]; then
 fi
 REF="${LUNAPAD_REF:-$(git_ -C "$APP_DIR" describe --tags --abbrev=0 2>/dev/null || git_ -C "$SRC" rev-parse HEAD)}"
 git_ -C "$APP_DIR" checkout --quiet --force "$REF"
-echo "$(git_ -C "$APP_DIR" describe --tags --always) $(date +%Y-%m-%d)" > "$APP_DIR/BUILD"
+# A self-update to anything but a release tag came from the beta channel - say so in the title.
+CHANNEL=""
+if [ "$UPDATE" = 1 ] && ! git_ -C "$APP_DIR" tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' >/dev/null; then
+    CHANNEL="beta "
+fi
+echo "$CHANNEL$(git_ -C "$APP_DIR" describe --tags --always) $(date +%Y-%m-%d)" > "$APP_DIR/BUILD"
 chown -R root:root "$APP_DIR"
 chmod -R a+rX,go-w "$APP_DIR"
 echo "Installed $(cat "$APP_DIR/BUILD")"
@@ -65,6 +76,11 @@ visudo -cf /tmp/lunapad_sudoers   # a broken sudoers file can lock out sudo - ch
 install -o root -g root -m 0440 /tmp/lunapad_sudoers /etc/sudoers.d/lunapad
 rm -f /tmp/lunapad_sudoers
 install -o root -g root -m 0644 "$SRC/deploy/apt-lunapad.conf" /etc/apt/apt.conf.d/90lunapad-noprompt
+
+if [ "$UPDATE" = 1 ]; then
+    echo "Done. Lunapad $(cat "$APP_DIR/BUILD") is installed; the launcher restarts into it."
+    exit 0
+fi
 
 CONFIG="$APP_HOME/.config/lunapad/lunapad.toml"
 if [ -n "${LUNAPAD_HOST:-}" ]; then
