@@ -56,7 +56,12 @@ Gamepad-only Moonlight launcher on a Raspberry Pi 4 (pygame, `SDL_VIDEODRIVER=km
 
 ## Todo
 
-Nothing outstanding. v0.7.0, the first tagged release, has been tested on the Pi through both channels. There's deliberately no v0.6.0 tag, so every tagged release can update itself.
+1. PR checks (GitHub Actions on every pull request into `beta` and `main`), made required in the branch rulesets:
+   - Python: `ruff` lint and `py_compile` for `lunapad.py`, `settings.py`, `deploy/`, `tools/`
+   - Shell: `shellcheck` for `install.sh`, `uninstall.sh`, `deploy/*.sh`, plus `visudo -c` on the sudoers template
+   - Security: CodeQL (free for public repos) and a secret scan (`gitleaks`), so private details such as LAN IPs, keys and the real email can't slip into the public repo
+
+v0.7.0, the first tagged release, has been tested on the Pi through both channels. There's deliberately no v0.6.0 tag, so every tagged release can update itself.
 
 ## Git
 
