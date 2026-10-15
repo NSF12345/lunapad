@@ -843,9 +843,12 @@ def save_update_state(pending):
 
 # apt must never wait for input - there's no keyboard. `sudo -n` fails instead
 # of prompting for a password, stdin is /dev/null, and DEBIAN_FRONTEND stops
-# debconf questions (kept through sudo by deploy/sudoers-lunapad). Config-file
+# debconf questions (through sudo it's fixed in the command: SUDO_APT). Config-file
 # questions are answered by deploy/apt-lunapad.conf (keep the current file).
-APT_ENV = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
+APT_ENV = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}  # for apt run without sudo
+# Through sudo, the variable is part of the command itself (see deploy/sudoers-lunapad):
+# debconf evaluates its value as code, so sudo never passes it from our environment.
+SUDO_APT = ["/usr/bin/env", "DEBIAN_FRONTEND=noninteractive", "/usr/bin/apt-get"]
 
 def check_updates_background():
     global pending_updates, checking_updates
@@ -853,7 +856,7 @@ def check_updates_background():
     check_lunapad_update()
     try:
         subprocess.call(
-            ["sudo", "-n", "/usr/bin/apt-get", "update"],
+            ["sudo", "-n", *SUDO_APT, "update"],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             env=APT_ENV, timeout=600,
         )
@@ -1376,11 +1379,11 @@ def do_update():
     global pending_updates
     log_lines = []
     failed = None
-    rc = run_apt_live(["/usr/bin/apt-get", "update"], "Updating package lists...", log_lines)
+    rc = run_apt_live([*SUDO_APT, "update"], "Updating package lists...", log_lines)
     if rc != 0:
         failed = f"Updating package lists failed (exit {rc})"
     else:
-        rc = run_apt_live(["/usr/bin/apt-get", "full-upgrade", "-y"], "Installing updates...", log_lines)
+        rc = run_apt_live([*SUDO_APT, "full-upgrade", "-y"], "Installing updates...", log_lines)
         if rc != 0:
             failed = f"Installing updates failed (exit {rc})"
     pygame.event.clear()  # discard any input queued up while the update ran uninterruptibly
@@ -1439,7 +1442,7 @@ def offer_autoremove():
     if choice != remove_label:
         return
     log_lines = []
-    rc = run_apt_live(["/usr/bin/apt-get", "autoremove", "-y"], "Removing unused packages...", log_lines)
+    rc = run_apt_live([*SUDO_APT, "autoremove", "-y"], "Removing unused packages...", log_lines)
     pygame.event.clear()
     if rc != 0:
         msg = f"Removing unused packages failed (exit {rc})"

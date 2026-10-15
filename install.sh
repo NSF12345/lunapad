@@ -96,11 +96,14 @@ echo "Installed $(cat "$APP_DIR/BUILD")"
 
 say "Boot loop, sudo rules, apt config"
 # From the installed version, not the source: they must match the code in $APP_DIR.
-install -o "$APP_USER" -g "$APP_USER" -m 0644 "$APP_DIR/deploy/bash_profile" "$APP_HOME/.bash_profile"
-sed -e "s|__USER__|$APP_USER|g" -e "s|__APPDIR__|$APP_DIR|g" "$APP_DIR/deploy/sudoers-lunapad" > /tmp/lunapad_sudoers
-visudo -cf /tmp/lunapad_sudoers   # a broken sudoers file can lock out sudo - check first
-install -o root -g root -m 0440 /tmp/lunapad_sudoers /etc/sudoers.d/lunapad
-rm -f /tmp/lunapad_sudoers
+# Anything in $APP_HOME belongs to the lunapad account, so write there AS that account:
+# done as root, a symlink it planted could redirect the write or the chown.
+runuser -u "$APP_USER" -- install -m 0644 "$APP_DIR/deploy/bash_profile" "$APP_HOME/.bash_profile"
+sudoers_tmp="$(mktemp)"   # private (0600), not a fixed /tmp name another account could plant
+sed -e "s|__USER__|$APP_USER|g" -e "s|__APPDIR__|$APP_DIR|g" "$APP_DIR/deploy/sudoers-lunapad" > "$sudoers_tmp"
+visudo -cf "$sudoers_tmp"   # a broken sudoers file can lock out sudo - check first
+install -o root -g root -m 0440 "$sudoers_tmp" /etc/sudoers.d/lunapad
+rm -f "$sudoers_tmp"
 install -o root -g root -m 0644 "$APP_DIR/deploy/apt-lunapad.conf" /etc/apt/apt.conf.d/90lunapad-noprompt
 
 if [ "$UPDATE" = 1 ]; then
@@ -110,12 +113,12 @@ fi
 
 CONFIG="$APP_HOME/.config/lunapad/lunapad.toml"
 if [ -n "${LUNAPAD_HOST:-}" ]; then
-    if [ -e "$CONFIG" ]; then
+    if [ -e "$CONFIG" ] || [ -L "$CONFIG" ]; then
         echo "LUNAPAD_HOST ignored: settings already exist ($CONFIG)"
     elif [[ "$LUNAPAD_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
-        install -d -o "$APP_USER" -g "$APP_USER" "$APP_HOME/.config" "$APP_HOME/.config/lunapad"
-        printf '[host]\naddress = "%s"\n' "$LUNAPAD_HOST" > "$CONFIG"   # the rest fills in with defaults
-        chown "$APP_USER:$APP_USER" "$CONFIG"
+        runuser -u "$APP_USER" -- mkdir -p "$(dirname "$CONFIG")"
+        printf '[host]\naddress = "%s"\n' "$LUNAPAD_HOST" \
+            | runuser -u "$APP_USER" -- tee "$CONFIG" >/dev/null   # the rest fills in with defaults
         echo "Host set to $LUNAPAD_HOST"
     else
         echo "LUNAPAD_HOST ignored: '$LUNAPAD_HOST' isn't a hostname or IP - set it up on the TV instead"
