@@ -53,5 +53,9 @@ Gamepad-only Moonlight launcher on a Raspberry Pi 4 (pygame, `SDL_VIDEODRIVER=km
 
 ## Todo
 
-1. Git-based updates: tag releases (`v0.6.0`...), and have the Update button / an update script fetch the latest tag into `/opt/lunapad` (root-owned script via a narrow sudo rule). Needs the repo reachable from the Pi, i.e. after it's public
-2. Publish the public repo: a fresh history (no private commits), commits under the GitHub no-reply email
+1. Git-based updates: tag releases (`v0.6.0`...), and have the Update button / an update script fetch the latest tag from https://github.com/NSF12345/lunapad into `/opt/lunapad` (root-owned script via a narrow sudo rule)
+
+## Git
+
+- Public repo `NSF12345/lunapad`. **Never push to `main`**: work on a branch (currently `lunapad-0.6.0`), and the user merges it when they choose.
+- Commits use the GitHub no-reply email. Keep private details in the git-ignored `CLAUDE.local.md` and `deploy/pi-target`.
