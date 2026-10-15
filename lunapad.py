@@ -307,21 +307,30 @@ GOOD = THEME["good"]
 BAD = THEME["bad"]
 DIVIDER = THEME["divider"]
 
-_BLUETOOTH_ICON_PATH = os.path.join(APP_DIR, "bluetooth_icon.png")
-_BLUETOOTH_ICON_RAW = None
+BLUETOOTH_BLUE = (0, 130, 252)
+# The Bluetooth symbol as one line through six points, in a box 1 wide x 1 tall:
+# left tip, lower right, bottom, top, upper right, left tip.
+_BLUETOOTH_RUNE = [(0.14, 0.30), (0.92, 0.72), (0.5, 0.96), (0.5, 0.04), (0.92, 0.28), (0.14, 0.70)]
 _BLUETOOTH_ICON_CACHE = {}
-if os.path.exists(_BLUETOOTH_ICON_PATH):
-    _BLUETOOTH_ICON_RAW = pygame.image.load(_BLUETOOTH_ICON_PATH).convert_alpha()
 
 def draw_bluetooth_icon(surface, center, size, color):
-    cx, cy = center
-    if _BLUETOOTH_ICON_RAW is None:
-        pygame.draw.circle(surface, (0, 130, 252), (cx, cy), size / 2)
-        return
-    if size not in _BLUETOOTH_ICON_CACHE:
-        _BLUETOOTH_ICON_CACHE[size] = pygame.transform.smoothscale(_BLUETOOTH_ICON_RAW, (size, size))
-    icon = _BLUETOOTH_ICON_CACHE[size]
-    surface.blit(icon, icon.get_rect(center=(cx, cy)))
+    """The Bluetooth symbol, `size` px tall, centred on `center`. Drawn at 4x and
+    scaled down so the lines stay smooth at small sizes; cached per size/colour."""
+    key = (size, color)
+    if key not in _BLUETOOTH_ICON_CACHE:
+        ss = 4
+        h = round(size * 0.82) * ss  # the symbol fills ~82% of the icon's height
+        w = round(h * 0.52)
+        stroke = max(2 * ss, round(size * 0.085 * ss))
+        big = pygame.Surface((w + stroke * 2, h + stroke * 2), pygame.SRCALPHA)
+        pts = [(stroke + x * w, stroke + y * h) for x, y in _BLUETOOTH_RUNE]
+        pygame.draw.lines(big, color, False, pts, stroke)
+        for p in pts:  # round joins and ends
+            pygame.draw.circle(big, color, p, stroke / 2)
+        _BLUETOOTH_ICON_CACHE[key] = pygame.transform.smoothscale(
+            big, (big.get_width() // ss, big.get_height() // ss))
+    icon = _BLUETOOTH_ICON_CACHE[key]
+    surface.blit(icon, icon.get_rect(center=center))
 
 def draw_battery_icon(surface, x, y, pct, charging=False):
     """Draws a fill-level battery icon (color reflects charge) at (x, y);
@@ -1119,7 +1128,7 @@ def draw_frame():
             cy = top + name_surf.get_height() + 10 + row_h // 2
             cx = text_x
             if c["connection"] == "Bluetooth":
-                draw_bluetooth_icon(screen, (cx + 12, cy), 24, ACCENT)
+                draw_bluetooth_icon(screen, (cx + 12, cy), 24, BLUETOOTH_BLUE)
                 cx += 32
             screen.blit(conn_surf, (cx, cy - conn_surf.get_height() // 2))
             cx += conn_surf.get_width() + 28

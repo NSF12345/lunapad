@@ -24,7 +24,7 @@ else
 fi
 
 stage="$(mktemp -d)"
-cp lunapad.py settings.py bluetooth_icon.png splash.png deploy/remote-deploy.sh "$stage/"
+cp lunapad.py settings.py splash.png deploy/remote-deploy.sh "$stage/"
 echo "dev $(git describe --tags --always --dirty 2>/dev/null || echo unknown) $(date +%Y-%m-%d)" > "$stage/BUILD"
 tar -czf "$stage.tgz" -C "$stage" .
 # A private folder (mktemp -d, mode 0700) on the Pi: a fixed /tmp name could be

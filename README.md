@@ -148,7 +148,7 @@ On the Pi, the program lives in `/opt/lunapad/` and runs as the `lunapad` accoun
 | `lunapad.py` | The launcher (pygame, `SDL_VIDEODRIVER=kmsdrm`). Version in `__version__`; `deploy.sh` adds the git commit as `BUILD` |
 | `settings.py` | Every setting: label, allowed values, default and help. Drives both `~/.config/lunapad/lunapad.toml` and the Settings page |
 | `~/.config/lunapad/lunapad.toml` (on the Pi, not in the repo) | Your settings, created with defaults on first run and documented line by line. Edit by hand or from the Settings page |
-| `bluetooth_icon.png`, `splash.png` | UI assets |
+| `splash.png` | The boot splash (a plain dark gradient) |
 | `install.sh` | The installer, run as root on the Pi: packages, the `lunapad` account, `/opt/lunapad`, login loop, sudo rules, autologin. Safe to re-run |
 | `deploy/self-update.sh` | Run by the Update screen (as root, via the sudo rule): fetches the newest stable release tag or the beta branch from GitHub, checks it out and runs `install.sh --update` |
 | `uninstall.sh` | Removes everything `install.sh` set up (`--keep-data` keeps the account and its settings/pairing) |
