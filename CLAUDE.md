@@ -49,6 +49,7 @@ Gamepad-only Moonlight launcher on a Raspberry Pi 4 (pygame, `SDL_VIDEODRIVER=km
 ## Working preferences
 
 - Show visual/layout changes (render or screenshot) before deploying them. `python tools/preview_dashboard.py` renders the dashboard at 1920x1080 for 0/1/2/4 controllers (needs `pip install pygame-ce` locally).
+- After changing how a screen looks, re-run `python tools/readme_screenshots.py` so the README images stay current. They use sample data only.
 - On ambiguous visuals (icons, shapes), ask instead of guessing repeatedly.
 - Check what SDL recognises with `deploy/check_controllers.py`, never from assumptions.
 
