@@ -2,6 +2,8 @@
 
 A gamepad-only launcher that turns a Raspberry Pi 4 into a TV box for streaming PC games (Moonlight client → Sunshine host). No keyboard or mouse needed.
 
+![The Lunapad dashboard: app tiles from the gaming PC, connected controllers, and system utilities](docs/images/dashboard.png)
+
 > **This project was vibecoded** - I want to be upfront that a lot of
 > this was built through conversation with an AI assistant (Claude).
 > I understand people have mixed feelings about AI-assisted code, and
@@ -24,6 +26,16 @@ A gamepad-only launcher that turns a Raspberry Pi 4 into a TV box for streaming 
 - **Pairing** — if the Pi isn't paired with the host, the host line says so; pressing A on an app, or **Settings > Pair with host**, shows a PIN to enter in Sunshine's web page (PIN tab) and pairs without opening Moonlight
 - **Running sessions** — if an app is still running on the host (e.g. you left a stream without quitting), the host line and its tile say so. A resumes it (or quits it), B quits it, and launching a different app offers to close it first
 - **Idle dim** — after 5 minutes idle the screen dims, and after 5 more it fades to black (burn-in protection; both times are in Settings). The first input wakes it without triggering an action
+
+## Screenshots
+
+| Update: Lunapad and the Pi's packages | Settings, from the gamepad |
+|---|---|
+| ![Update menu offering a Lunapad release and system updates](docs/images/update.png) | ![Settings page with host and Moonlight stream options](docs/images/settings.png) |
+| **On-screen keyboard** (full keyboard / number pad) | **Bluetooth gamepads** |
+| ![On-screen keyboard entering the host address](docs/images/keyboard.png) | ![Bluetooth page listing paired and available gamepads](docs/images/bluetooth.png) |
+
+These are rendered from Lunapad's own drawing code with sample data (`tools/readme_screenshots.py`).
 
 ## Installation
 
@@ -122,6 +134,8 @@ On the Pi, the program lives in `/opt/lunapad/` and runs as the `lunapad` accoun
 | `deploy/install-on-pi.sh` | Runs `install.sh` on the Pi from this PC (sends the committed history as a git bundle) |
 | `deploy/deploy.sh` | Dev deploy: copies the working copy's app files into `/opt/lunapad`, restarts and verifies (`deploy/remote-deploy.sh` runs on the Pi) |
 | `deploy/check_controllers.py` | Reports whether each pad is recognised by SDL's controller database |
+| `tools/preview_dashboard.py` | Renders the dashboard off-screen for checking layout changes on a PC |
+| `tools/readme_screenshots.py` | Regenerates the README screenshots in `docs/images/` (sample data only) |
 | `deploy/bash_profile` | The `lunapad` account's login profile: boot splash, then the launcher in a loop |
 | `deploy/sudoers-lunapad` | Passwordless reboot/update/autoremove/splash rule for the `lunapad` account (a template), installed as `/etc/sudoers.d/lunapad` |
 | `deploy/apt-lunapad.conf` | Stops dpkg asking about changed config files during updates (keeps the current file), installed as `/etc/apt/apt.conf.d/90lunapad-noprompt` |
