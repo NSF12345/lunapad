@@ -1,0 +1,13 @@
+# The lunapad account's login profile (installed by install.sh). Autologin on
+# tty1 runs this: boot splash, then the launcher in a loop.
+if [ "$(tty)" = "/dev/tty1" ]; then
+    # boot splash until the launcher takes the display; -n: never prompt (it's in the background)
+    sudo -n /usr/bin/fbi -T 1 -noverbose -a /opt/lunapad/splash.png &
+    while true; do
+        python3 /opt/lunapad/lunapad.py
+        if [ $? -eq 99 ]; then
+            break
+        fi
+        sleep 2  # a launcher that crashes on start would otherwise restart flat out
+    done
+fi
