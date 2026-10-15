@@ -60,5 +60,6 @@ Nothing outstanding. v0.7.0, the first tagged release, has been tested on the Pi
 ## Git
 
 - Public repo `NSF12345/lunapad`. **Never push to `main`**: work on feature branches, and the user merges them (into `beta`, then `main`) when they choose. The `beta` branch is what beta-channel Pis install.
-- No local merge commits: bring a branch up to date by rebasing. After a release (a `beta` -> `main` PR, then a `vX.Y.Z` tag on `main`), fast-forward `beta` to `main`.
+- No local merge commits: bring a feature branch up to date by rebasing it onto `beta`. `main` and `beta` are protected (pull request required, no deletion, no force push), so nothing is pushed to them directly. `beta` may lag `main` by its PR merge commits; that's harmless.
+- Merge `beta` -> `main` with a merge commit, never a squash: a squashed long-lived branch keeps showing its old commits as unmerged in every later PR.
 - Commits use the GitHub no-reply email. Keep private details in the git-ignored `CLAUDE.local.md` and `deploy/pi-target`.
