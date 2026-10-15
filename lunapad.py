@@ -1732,7 +1732,9 @@ def run_bluetooth_page():
     def render_bg():
         screen.fill(THEME["bg"])
         title = title_font.render("Bluetooth", True, TEXT)
-        screen.blit(title, (margin, 36))
+        icon_h = round(title.get_height() * 0.8)
+        draw_bluetooth_icon(screen, (margin + icon_h // 3, 36 + title.get_height() // 2), icon_h, BLUETOOTH_BLUE)
+        screen.blit(title, (margin + icon_h * 2 // 3 + 16, 36))
         draw_clock(margin, 36, title.get_height())
         note = hint_font.render(
             "A: connect/pair/manage   Y: scan for new gamepads   B: back", True, MUTED
