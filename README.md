@@ -2,6 +2,17 @@
 
 A gamepad-only launcher that turns a Raspberry Pi 4 into a TV box for streaming PC games (Moonlight client → Sunshine host). No keyboard or mouse needed.
 
+> **This project was vibecoded** - I want to be upfront that a lot of
+> this was built through conversation with an AI assistant (Claude).
+> I understand people have mixed feelings about AI-assisted code, and
+> generally agree with those feelings. But for a personal, one-off
+> homelab project like this - something you just want to get up and
+> running - I think it's a genuinely great tool to have at my
+> disposal.
+>
+> I have taken great care to review & understand all code changes
+> made by AI tools within this project.
+
 ## Features
 
 - **Dashboard** — one tile per app on the host (from `moonlight-qt list`, cached for when the host is off), plus connected controllers with Bluetooth and battery status
