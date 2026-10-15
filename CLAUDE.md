@@ -54,9 +54,10 @@ Gamepad-only Moonlight launcher on a Raspberry Pi 4 (pygame, `SDL_VIDEODRIVER=km
 
 ## Todo
 
-1. First tagged release is **v0.7.0** (deliberately no v0.6.0 tag, so every tagged release can update itself). Once `beta` is merged into `main`, the user tags the merge commit `v0.7.0`; then test the Stable channel on the Pi
+Nothing outstanding. v0.7.0, the first tagged release, has been tested on the Pi through both channels. There's deliberately no v0.6.0 tag, so every tagged release can update itself.
 
 ## Git
 
 - Public repo `NSF12345/lunapad`. **Never push to `main`**: work on feature branches, and the user merges them (into `beta`, then `main`) when they choose. The `beta` branch is what beta-channel Pis install.
+- No local merge commits: bring a branch up to date by rebasing. After a release (a `beta` -> `main` PR, then a `vX.Y.Z` tag on `main`), fast-forward `beta` to `main`.
 - Commits use the GitHub no-reply email. Keep private details in the git-ignored `CLAUDE.local.md` and `deploy/pi-target`.
