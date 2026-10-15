@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # The lunapad account's login profile (installed by install.sh). Autologin on
 # tty1 runs this: boot splash, then the launcher in a loop.
 if [ "$(tty)" = "/dev/tty1" ]; then
