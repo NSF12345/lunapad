@@ -189,6 +189,19 @@ Exiting via the on-screen **Exit** (exit code 99) stops the loop and leaves you 
 sudo systemctl restart getty@tty1
 ```
 
+## Credits
+
+Lunapad is an independent project. It isn't affiliated with or endorsed by the Moonlight or Sunshine projects.
+
+It's only a launcher. The hard work is done by:
+
+- [Moonlight](https://moonlight-stream.org/) (moonlight-stream), which does all the streaming, pairing and app listing
+- [Sunshine](https://github.com/LizardByte/Sunshine) (LizardByte), the streaming host on the gaming PC
+- [pygame](https://www.pygame.org/) and [SDL](https://www.libsdl.org/), for the display and controller input, including SDL's controller database
+- [BlueZ](http://www.bluez.org/), the Linux Bluetooth stack
+
+None of these are bundled in this repo, and each keeps its own licence. You install Moonlight and Sunshine yourself (see Installation). `install.sh` installs pygame (with SDL) and BlueZ from Raspberry Pi OS's own package repository, using `apt`.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
