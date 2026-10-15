@@ -98,13 +98,18 @@ SCHEMA = [
     Setting("idle.fade_seconds", "Fade time", "int", 15,
             "Seconds each fade (to dimmed, then to black) takes.", page=False),
 
+    # --- updates ---
+    Setting("updates.channel", "Lunapad updates", "choice", "stable",
+            "Stable: released versions. Beta: the newest changes first, which may still have bugs.",
+            choices=[("stable", "Stable"), ("beta", "Beta")]),
+
     # --- file-only ---
     Setting("apps.refresh_minutes", "App list refresh", "int", 10,
             "How often to re-read the host's app list (Reload Apps does it immediately).", page=False),
     Setting("apps.fallback", "Fallback apps", "str_list", ["Desktop", "Steam Big Picture"],
             "App tiles to show until the host's list has been read once.", page=False),
     Setting("updates.check_hours", "Update check", "int", 24,
-            "How often to check for Pi system updates.", page=False),
+            "How often to check for Pi system and Lunapad updates.", page=False),
     Setting("input.stick_trigger", "Stick trigger", "float", 0.5,
             "How far (0-1) a stick must be pushed to move the selection.", page=False),
     Setting("input.stick_release", "Stick release", "float", 0.3,

@@ -17,7 +17,7 @@ A gamepad-only launcher that turns a Raspberry Pi 4 into a TV box for streaming 
 
 - **Dashboard** — one tile per app on the host (from `moonlight-qt list`, cached for when the host is off), plus connected controllers with Bluetooth and battery status
 - **Bluetooth page** — list, scan for, pair, connect, disconnect and forget gamepads
-- **Update** — list pending apt updates, then install with live `apt-get` output; once it's done, offers to remove packages no longer needed (old kernels), showing the list first
+- **Update** — updates Lunapad itself from GitHub (the **Stable** or **Beta** channel, chosen in Settings → Updates), and the Pi's apt packages, with live output. After a system update it offers to remove packages no longer needed (old kernels), showing the list first
 - **Reload Apps** — re-read the host's app list now, instead of waiting for the 10-minute auto-refresh
 - **Settings** — the Settings chip in the host panel opens a gamepad settings page: host address, stream resolution / fps / bitrate / codec / audio / overlay and other stream options, the launcher's screen resolution, and idle timings. Everything is saved in the `lunapad` account's `~/.config/lunapad/lunapad.toml`
 - **Moonlight check** — if Moonlight Qt isn't installed, the host panel says so and launching explains how to install it (Lunapad never installs it). An install older than 6.2.0 gets a warning, since new host apps only appear from 6.2.0
@@ -117,6 +117,7 @@ On the Pi, the program lives in `/opt/lunapad/` and runs as the `lunapad` accoun
 | `~/.config/lunapad/lunapad.toml` (on the Pi, not in the repo) | Your settings, created with defaults on first run and documented line by line. Edit by hand or from the Settings page |
 | `bluetooth_icon.png`, `splash.png` | UI assets |
 | `install.sh` | The installer, run as root on the Pi: packages, the `lunapad` account, `/opt/lunapad`, login loop, sudo rules, autologin. Safe to re-run |
+| `deploy/self-update.sh` | Run by the Update screen (as root, via the sudo rule): fetches the newest stable release tag or the beta branch from GitHub, checks it out and runs `install.sh --update` |
 | `uninstall.sh` | Removes everything `install.sh` set up (`--keep-data` keeps the account and its settings/pairing) |
 | `deploy/install-on-pi.sh` | Runs `install.sh` on the Pi from this PC (sends the committed history as a git bundle) |
 | `deploy/deploy.sh` | Dev deploy: copies the working copy's app files into `/opt/lunapad`, restarts and verifies (`deploy/remote-deploy.sh` runs on the Pi) |
@@ -124,6 +125,14 @@ On the Pi, the program lives in `/opt/lunapad/` and runs as the `lunapad` accoun
 | `deploy/bash_profile` | The `lunapad` account's login profile: boot splash, then the launcher in a loop |
 | `deploy/sudoers-lunapad` | Passwordless reboot/update/autoremove/splash rule for the `lunapad` account (a template), installed as `/etc/sudoers.d/lunapad` |
 | `deploy/apt-lunapad.conf` | Stops dpkg asking about changed config files during updates (keeps the current file), installed as `/etc/apt/apt.conf.d/90lunapad-noprompt` |
+
+## Releases and update channels
+
+- **Stable** follows release tags: the highest `vX.Y.Z` tag. To release, merge into `main`, set `__version__` in `lunapad.py`, and tag that commit `vX.Y.Z`.
+- **Beta** follows the tip of the `beta` branch, so whatever lands there reaches beta Pis on their next update check.
+- Work happens on feature branches that merge into `beta` and then `main`.
+
+Lunapad checks its channel on every start and with the daily update check, and again after you leave Settings, in case you switched channel. Switching from Beta back to Stable offers the stable release even when it's older.
 
 ## Controllers
 
