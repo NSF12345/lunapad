@@ -49,14 +49,17 @@ Gamepad-only Moonlight launcher on a Raspberry Pi 4 (pygame, `SDL_VIDEODRIVER=km
 ## Working preferences
 
 - Show visual/layout changes (render or screenshot) before deploying them. `python tools/preview_dashboard.py` renders the dashboard at 1920x1080 for 0/1/2/4 controllers (needs `pip install pygame-ce` locally).
+- After changing how a screen looks, re-run `python tools/readme_screenshots.py` so the README images stay current. They use sample data only.
 - On ambiguous visuals (icons, shapes), ask instead of guessing repeatedly.
 - Check what SDL recognises with `deploy/check_controllers.py`, never from assumptions.
 
 ## Todo
 
-1. First tagged release is **v0.7.0** (deliberately no v0.6.0 tag, so every tagged release can update itself). Once `beta` is merged into `main`, the user tags the merge commit `v0.7.0`; then test the Stable channel on the Pi
+Nothing outstanding. v0.7.0, the first tagged release, has been tested on the Pi through both channels. There's deliberately no v0.6.0 tag, so every tagged release can update itself.
 
 ## Git
 
 - Public repo `NSF12345/lunapad`. **Never push to `main`**: work on feature branches, and the user merges them (into `beta`, then `main`) when they choose. The `beta` branch is what beta-channel Pis install.
+- No local merge commits: bring a feature branch up to date by rebasing it onto `beta`. `main` and `beta` are protected (pull request required, no deletion, no force push), so nothing is pushed to them directly. `beta` may lag `main` by its PR merge commits; that's harmless.
+- Merge `beta` -> `main` with a merge commit, never a squash: a squashed long-lived branch keeps showing its old commits as unmerged in every later PR.
 - Commits use the GitHub no-reply email. Keep private details in the git-ignored `CLAUDE.local.md` and `deploy/pi-target`.

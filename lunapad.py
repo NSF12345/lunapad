@@ -1748,7 +1748,8 @@ def run_bluetooth_page():
                 screen.blit(mac_surf, (row_rect.x + 20, row_rect.y + 12 + name_surf.get_height() + 4))
 
                 if d["connected"]:
-                    status_surf = badge_font.render("Connected", True, GOOD)
+                    # green is unreadable on the blue highlight - use the row's dark text there
+                    status_surf = badge_font.render("Connected", True, name_color if i == selected_idx else GOOD)
                 elif d["paired"]:
                     status_surf = badge_font.render("Paired", True, mac_color)
                 else:
