@@ -1,4 +1,5 @@
 import os, sys, re, csv, random, shutil, subprocess, threading, time, json, socket, ipaddress, glob, pygame
+import ssl, uuid, tempfile, http.client
 import urllib.request
 import xml.etree.ElementTree as ET
 import settings as cfg
@@ -48,6 +49,7 @@ if sys.platform.startswith("linux"):  # on the Pi; the PC preview keeps printing
     start_log()
 HOST = cfg.get("host.address")
 HOST_PORT = cfg.get("host.port")  # Sunshine's HTTP port
+HOST_HTTPS_PORT = HOST_PORT - 5  # Sunshine's HTTPS port is always 5 below its HTTP one (47984)
 MOONLIGHT_HOST = cfg.moonlight_host()  # what moonlight-qt is given: host, or host:port
 HOST_URL_HOST = f"[{HOST}]" if ":" in HOST else HOST  # for http:// URLs
 RESOLUTION = cfg.display_resolution()
@@ -702,7 +704,143 @@ def fetch_host_apps():
     host_paired = True
     return names
 
+# --- App IDs straight from the host (issue #17) ---
+MOONLIGHT_CONF = os.path.join(cfg.HOME, ".config", "Moonlight Game Streaming Project", "Moonlight.conf")
+
+def _qt_ini_value(raw):
+    """Decodes one QSettings INI value as Moonlight writes it: an optional
+    @ByteArray(...) wrapper around a string with C-style backslash escapes
+    (newline, backslash, quote, and hex byte escapes)."""
+    raw = raw.strip()
+    # Quotes first: Moonlight writes certificate/key as "@ByteArray(...)" but
+    # srvcert as a bare @ByteArray(...).
+    if len(raw) >= 2 and raw[0] == raw[-1] == '"':
+        raw = raw[1:-1]
+    if raw.startswith("@ByteArray(") and raw.endswith(")"):
+        raw = raw[len("@ByteArray("):-1]
+    simple = {"n": "\n", "r": "\r", "t": "\t", "0": "\0", "\\": "\\", '"': '"'}
+    out, i = [], 0
+    while i < len(raw):
+        c = raw[i]
+        if c == "\\" and i + 1 < len(raw):
+            nxt = raw[i + 1]
+            if nxt == "x":  # \xHH
+                m = re.match(r"[0-9a-fA-F]+", raw[i + 2:])
+                if m:
+                    out.append(chr(int(m.group(0), 16)))
+                    i += 2 + len(m.group(0))
+                    continue
+            out.append(simple.get(nxt, nxt))
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+def read_moonlight_identity():
+    """(client_cert_pem, client_key_pem, [server_cert_pem, ...]) from
+    Moonlight.conf, or None. These are this Pi's pairing credentials: read
+    locally, never logged, and only used in the TLS handshake with the host."""
+    try:
+        with open(MOONLIGHT_CONF, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    cert = key = None
+    server_certs = []
+    for line in lines:
+        name, sep, value = line.partition("=")
+        if not sep:
+            continue
+        name = name.strip()
+        if name == "certificate":
+            cert = _qt_ini_value(value)
+        elif name == "key":
+            key = _qt_ini_value(value)
+        elif name.endswith("\\srvcert"):  # hosts\N\srvcert, one per paired host
+            server_certs.append(_qt_ini_value(value))
+    if not (cert and key and "BEGIN" in cert and "BEGIN" in key):
+        return None
+    return cert, key, [c for c in server_certs if "BEGIN CERTIFICATE" in c]
+
+def parse_applist(body):
+    """{app name: ID} from Sunshine's /applist XML, or None."""
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError as e:
+        print(f"Direct app IDs: bad XML: {e}")
+        return None
+    if root.get("status_code", "200") != "200":
+        print(f"Direct app IDs: host said {root.get('status_code')} {root.get('status_message', '')}")
+        return None
+    ids = {}
+    for app in root.iter("App"):
+        name = (app.findtext("AppTitle") or "").strip()
+        try:
+            ids[name] = int(app.findtext("ID") or "")
+        except ValueError:
+            continue
+    return ids or None
+
+def fetch_app_ids_direct():
+    """{app name: ID} from the host's /applist, the request Moonlight makes
+    itself, authenticated with Moonlight's pairing certificate. Unlike
+    `moonlight-qt list --csv` it never waits on box art. None on any failure.
+    The host must present the certificate saved when this Pi paired with it
+    (as Moonlight checks), so nothing else on the network can stand in for it."""
+    identity = read_moonlight_identity()
+    if identity is None:
+        print("Direct app IDs: no pairing credentials in Moonlight.conf")
+        return None
+    cert_pem, key_pem, server_certs = identity
+    if not server_certs:
+        print("Direct app IDs: no paired host certificate in Moonlight.conf")
+        return None
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE  # self-signed: pinned against srvcert below instead
+    # ssl only loads a client cert/key from a file: write it 0600 for the moment
+    # it takes to load, preferring RAM-backed /dev/shm.
+    fd, path = tempfile.mkstemp(dir="/dev/shm" if os.path.isdir("/dev/shm") else None)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(cert_pem.strip() + "\n" + key_pem.strip() + "\n")
+        ctx.load_cert_chain(path)
+    except Exception as e:
+        print(f"Direct app IDs: couldn't load the pairing certificate: {e}")
+        return None
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    conn = http.client.HTTPSConnection(HOST, HOST_HTTPS_PORT, context=ctx, timeout=10)
+    try:
+        conn.connect()
+        presented = conn.sock.getpeercert(binary_form=True)
+        if presented not in {ssl.PEM_cert_to_DER_cert(c) for c in server_certs}:
+            print("Direct app IDs: the host's certificate isn't the paired one - ignoring it")
+            return None
+        conn.request("GET", f"/applist?uniqueid=0123456789ABCDEF&uuid={uuid.uuid4().hex}")
+        response = conn.getresponse()
+        body = response.read()
+    except Exception as e:
+        print(f"Direct app IDs: request failed: {e}")
+        return None
+    finally:
+        conn.close()
+    if response.status != 200:
+        print(f"Direct app IDs: host answered HTTP {response.status}")
+        return None
+    return parse_applist(body)
+
 def fetch_app_ids():
+    """{app name: Sunshine app ID}, or None: straight from the host, falling back
+    to `moonlight-qt list --csv` if that fails (e.g. Moonlight.conf changed format)."""
+    ids = fetch_app_ids_direct()
+    return ids if ids is not None else fetch_app_ids_csv()
+
+def fetch_app_ids_csv():
     """{app name: Sunshine app ID} via `moonlight-qt list --csv`, or None. Can
     stall on uncached box art (see fetch_host_apps), so it has its own limit
     and only ever runs in the background. Opening Moonlight Window once caches
