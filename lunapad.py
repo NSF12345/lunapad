@@ -1,10 +1,11 @@
 import os, sys, re, csv, random, shutil, subprocess, threading, time, json, socket, ipaddress, glob, pygame
+import ssl, uuid, tempfile, http.client
 import urllib.request
 import xml.etree.ElementTree as ET
 import settings as cfg
 from settings import STATE_FILE, APPS_CACHE_FILE
 
-__version__ = "0.7.1"
+__version__ = "0.7.2"
 APP_DIR = os.path.dirname(os.path.abspath(__file__))  # /opt/lunapad on the Pi: code and images
 
 def _read_build():
@@ -48,6 +49,7 @@ if sys.platform.startswith("linux"):  # on the Pi; the PC preview keeps printing
     start_log()
 HOST = cfg.get("host.address")
 HOST_PORT = cfg.get("host.port")  # Sunshine's HTTP port
+HOST_HTTPS_PORT = HOST_PORT - 5  # Sunshine's HTTPS port is always 5 below its HTTP one (47984)
 MOONLIGHT_HOST = cfg.moonlight_host()  # what moonlight-qt is given: host, or host:port
 HOST_URL_HOST = f"[{HOST}]" if ":" in HOST else HOST  # for http:// URLs
 RESOLUTION = cfg.display_resolution()
@@ -307,21 +309,30 @@ GOOD = THEME["good"]
 BAD = THEME["bad"]
 DIVIDER = THEME["divider"]
 
-_BLUETOOTH_ICON_PATH = os.path.join(APP_DIR, "bluetooth_icon.png")
-_BLUETOOTH_ICON_RAW = None
+BLUETOOTH_BLUE = (0, 130, 252)
+# The Bluetooth symbol as one line through six points, in a box 1 wide x 1 tall:
+# left tip, lower right, bottom, top, upper right, left tip.
+_BLUETOOTH_RUNE = [(0.14, 0.30), (0.92, 0.72), (0.5, 0.96), (0.5, 0.04), (0.92, 0.28), (0.14, 0.70)]
 _BLUETOOTH_ICON_CACHE = {}
-if os.path.exists(_BLUETOOTH_ICON_PATH):
-    _BLUETOOTH_ICON_RAW = pygame.image.load(_BLUETOOTH_ICON_PATH).convert_alpha()
 
 def draw_bluetooth_icon(surface, center, size, color):
-    cx, cy = center
-    if _BLUETOOTH_ICON_RAW is None:
-        pygame.draw.circle(surface, (0, 130, 252), (cx, cy), size / 2)
-        return
-    if size not in _BLUETOOTH_ICON_CACHE:
-        _BLUETOOTH_ICON_CACHE[size] = pygame.transform.smoothscale(_BLUETOOTH_ICON_RAW, (size, size))
-    icon = _BLUETOOTH_ICON_CACHE[size]
-    surface.blit(icon, icon.get_rect(center=(cx, cy)))
+    """The Bluetooth symbol, `size` px tall, centred on `center`. Drawn at 4x and
+    scaled down so the lines stay smooth at small sizes; cached per size/colour."""
+    key = (size, color)
+    if key not in _BLUETOOTH_ICON_CACHE:
+        ss = 4
+        h = round(size * 0.82) * ss  # the symbol fills ~82% of the icon's height
+        w = round(h * 0.52)
+        stroke = max(2 * ss, round(size * 0.085 * ss))
+        big = pygame.Surface((w + stroke * 2, h + stroke * 2), pygame.SRCALPHA)
+        pts = [(stroke + x * w, stroke + y * h) for x, y in _BLUETOOTH_RUNE]
+        pygame.draw.lines(big, color, False, pts, stroke)
+        for p in pts:  # round joins and ends
+            pygame.draw.circle(big, color, p, stroke / 2)
+        _BLUETOOTH_ICON_CACHE[key] = pygame.transform.smoothscale(
+            big, (big.get_width() // ss, big.get_height() // ss))
+    icon = _BLUETOOTH_ICON_CACHE[key]
+    surface.blit(icon, icon.get_rect(center=center))
 
 def draw_battery_icon(surface, x, y, pct, charging=False):
     """Draws a fill-level battery icon (color reflects charge) at (x, y);
@@ -600,6 +611,17 @@ def refresh_host_status():
         except Exception:
             host_reachable = False
 
+# Moonlight's working folder. It writes eglfs_override_XXXXXX.conf files there and
+# leaves them behind; a private folder (not the shared /tmp, where other accounts could
+# plant files) that is emptied of them on every start.
+MOONLIGHT_CWD = os.path.join(cfg.CACHE_DIR, "moonlight")
+try:
+    os.makedirs(MOONLIGHT_CWD, mode=0o700, exist_ok=True)
+    for _f in glob.glob(os.path.join(MOONLIGHT_CWD, "eglfs_override_*.conf")):
+        os.remove(_f)
+except OSError as e:
+    print(f"Couldn't prepare {MOONLIGHT_CWD}: {e}")
+
 def moonlight_env():
     """Environment for background moonlight-qt commands (list, pair, quit,
     --version): Qt's offscreen platform, and WITHOUT the launcher's own
@@ -641,11 +663,11 @@ host_paired = None  # True / False once `moonlight-qt list` has told us, None = 
 def _run_moonlight_list(args, timeout):
     """`moonlight-qt list [args] HOST`, or None if it failed or timed out.
     Qt must use the offscreen platform (by default it grabs the DRM display,
-    which this launcher holds); /tmp as cwd keeps its eglfs_override files out of ~."""
+    which this launcher holds); MOONLIGHT_CWD collects its eglfs_override files."""
     env = moonlight_env()
     try:
         return subprocess.run(["moonlight-qt", "list", *args, MOONLIGHT_HOST], capture_output=True, text=True,
-                              timeout=timeout, env=env, cwd="/tmp", stdin=subprocess.DEVNULL)
+                              timeout=timeout, env=env, cwd=MOONLIGHT_CWD, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired as e:
         def as_text(x):  # partial output can come back as bytes even with text=True
             return x.decode(errors="replace") if isinstance(x, bytes) else (x or "")
@@ -682,7 +704,143 @@ def fetch_host_apps():
     host_paired = True
     return names
 
+# --- App IDs straight from the host (issue #17) ---
+MOONLIGHT_CONF = os.path.join(cfg.HOME, ".config", "Moonlight Game Streaming Project", "Moonlight.conf")
+
+def _qt_ini_value(raw):
+    """Decodes one QSettings INI value as Moonlight writes it: an optional
+    @ByteArray(...) wrapper around a string with C-style backslash escapes
+    (newline, backslash, quote, and hex byte escapes)."""
+    raw = raw.strip()
+    # Quotes first: Moonlight writes certificate/key as "@ByteArray(...)" but
+    # srvcert as a bare @ByteArray(...).
+    if len(raw) >= 2 and raw[0] == raw[-1] == '"':
+        raw = raw[1:-1]
+    if raw.startswith("@ByteArray(") and raw.endswith(")"):
+        raw = raw[len("@ByteArray("):-1]
+    simple = {"n": "\n", "r": "\r", "t": "\t", "0": "\0", "\\": "\\", '"': '"'}
+    out, i = [], 0
+    while i < len(raw):
+        c = raw[i]
+        if c == "\\" and i + 1 < len(raw):
+            nxt = raw[i + 1]
+            if nxt == "x":  # \xHH
+                m = re.match(r"[0-9a-fA-F]+", raw[i + 2:])
+                if m:
+                    out.append(chr(int(m.group(0), 16)))
+                    i += 2 + len(m.group(0))
+                    continue
+            out.append(simple.get(nxt, nxt))
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+def read_moonlight_identity():
+    """(client_cert_pem, client_key_pem, [server_cert_pem, ...]) from
+    Moonlight.conf, or None. These are this Pi's pairing credentials: read
+    locally, never logged, and only used in the TLS handshake with the host."""
+    try:
+        with open(MOONLIGHT_CONF, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    cert = key = None
+    server_certs = []
+    for line in lines:
+        name, sep, value = line.partition("=")
+        if not sep:
+            continue
+        name = name.strip()
+        if name == "certificate":
+            cert = _qt_ini_value(value)
+        elif name == "key":
+            key = _qt_ini_value(value)
+        elif name.endswith("\\srvcert"):  # hosts\N\srvcert, one per paired host
+            server_certs.append(_qt_ini_value(value))
+    if not (cert and key and "BEGIN" in cert and "BEGIN" in key):
+        return None
+    return cert, key, [c for c in server_certs if "BEGIN CERTIFICATE" in c]
+
+def parse_applist(body):
+    """{app name: ID} from Sunshine's /applist XML, or None."""
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError as e:
+        print(f"Direct app IDs: bad XML: {e}")
+        return None
+    if root.get("status_code", "200") != "200":
+        print(f"Direct app IDs: host said {root.get('status_code')} {root.get('status_message', '')}")
+        return None
+    ids = {}
+    for app in root.iter("App"):
+        name = (app.findtext("AppTitle") or "").strip()
+        try:
+            ids[name] = int(app.findtext("ID") or "")
+        except ValueError:
+            continue
+    return ids or None
+
+def fetch_app_ids_direct():
+    """{app name: ID} from the host's /applist, the request Moonlight makes
+    itself, authenticated with Moonlight's pairing certificate. Unlike
+    `moonlight-qt list --csv` it never waits on box art. None on any failure.
+    The host must present the certificate saved when this Pi paired with it
+    (as Moonlight checks), so nothing else on the network can stand in for it."""
+    identity = read_moonlight_identity()
+    if identity is None:
+        print("Direct app IDs: no pairing credentials in Moonlight.conf")
+        return None
+    cert_pem, key_pem, server_certs = identity
+    if not server_certs:
+        print("Direct app IDs: no paired host certificate in Moonlight.conf")
+        return None
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE  # self-signed: pinned against srvcert below instead
+    # ssl only loads a client cert/key from a file: write it 0600 for the moment
+    # it takes to load, preferring RAM-backed /dev/shm.
+    fd, path = tempfile.mkstemp(dir="/dev/shm" if os.path.isdir("/dev/shm") else None)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(cert_pem.strip() + "\n" + key_pem.strip() + "\n")
+        ctx.load_cert_chain(path)
+    except Exception as e:
+        print(f"Direct app IDs: couldn't load the pairing certificate: {e}")
+        return None
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    conn = http.client.HTTPSConnection(HOST, HOST_HTTPS_PORT, context=ctx, timeout=10)
+    try:
+        conn.connect()
+        presented = conn.sock.getpeercert(binary_form=True)
+        if presented not in {ssl.PEM_cert_to_DER_cert(c) for c in server_certs}:
+            print("Direct app IDs: the host's certificate isn't the paired one - ignoring it")
+            return None
+        conn.request("GET", f"/applist?uniqueid=0123456789ABCDEF&uuid={uuid.uuid4().hex}")
+        response = conn.getresponse()
+        body = response.read()
+    except Exception as e:
+        print(f"Direct app IDs: request failed: {e}")
+        return None
+    finally:
+        conn.close()
+    if response.status != 200:
+        print(f"Direct app IDs: host answered HTTP {response.status}")
+        return None
+    return parse_applist(body)
+
 def fetch_app_ids():
+    """{app name: Sunshine app ID}, or None: straight from the host, falling back
+    to `moonlight-qt list --csv` if that fails (e.g. Moonlight.conf changed format)."""
+    ids = fetch_app_ids_direct()
+    return ids if ids is not None else fetch_app_ids_csv()
+
+def fetch_app_ids_csv():
     """{app name: Sunshine app ID} via `moonlight-qt list --csv`, or None. Can
     stall on uncached box art (see fetch_host_apps), so it has its own limit
     and only ever runs in the background. Opening Moonlight Window once caches
@@ -775,7 +933,7 @@ def check_moonlight_version():
     global moonlight_version, _version_checking
     try:
         result = subprocess.run(["moonlight-qt", "--version"], capture_output=True, text=True, timeout=15,
-                                env=moonlight_env(), cwd="/tmp",
+                                env=moonlight_env(), cwd=MOONLIGHT_CWD,
                                 stdin=subprocess.DEVNULL)
         m = re.search(r"Moonlight\s+(\d+)\.(\d+)\.(\d+)", result.stdout + result.stderr)
         moonlight_version = tuple(int(x) for x in m.groups()) if m else None
@@ -843,9 +1001,12 @@ def save_update_state(pending):
 
 # apt must never wait for input - there's no keyboard. `sudo -n` fails instead
 # of prompting for a password, stdin is /dev/null, and DEBIAN_FRONTEND stops
-# debconf questions (kept through sudo by deploy/sudoers-lunapad). Config-file
+# debconf questions (through sudo it's fixed in the command: SUDO_APT). Config-file
 # questions are answered by deploy/apt-lunapad.conf (keep the current file).
-APT_ENV = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
+APT_ENV = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}  # for apt run without sudo
+# Through sudo, the variable is part of the command itself (see deploy/sudoers-lunapad):
+# debconf evaluates its value as code, so sudo never passes it from our environment.
+SUDO_APT = ["/usr/bin/env", "DEBIAN_FRONTEND=noninteractive", "/usr/bin/apt-get"]
 
 def check_updates_background():
     global pending_updates, checking_updates
@@ -853,7 +1014,7 @@ def check_updates_background():
     check_lunapad_update()
     try:
         subprocess.call(
-            ["sudo", "-n", "/usr/bin/apt-get", "update"],
+            ["sudo", "-n", *SUDO_APT, "update"],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             env=APT_ENV, timeout=600,
         )
@@ -1105,7 +1266,7 @@ def draw_frame():
             cy = top + name_surf.get_height() + 10 + row_h // 2
             cx = text_x
             if c["connection"] == "Bluetooth":
-                draw_bluetooth_icon(screen, (cx + 12, cy), 24, ACCENT)
+                draw_bluetooth_icon(screen, (cx + 12, cy), 24, BLUETOOTH_BLUE)
                 cx += 32
             screen.blit(conn_surf, (cx, cy - conn_surf.get_height() // 2))
             cx += conn_surf.get_width() + 28
@@ -1265,9 +1426,7 @@ def show_status_popup(message, draw_bg=None):
 def launch(cmd):
     global screen
     pygame.quit()
-    # Moonlight writes eglfs_override_XXXXXX.conf into its working dir and
-    # leaves them behind - run it from /tmp so they don't pile up in ~.
-    subprocess.call(cmd, cwd="/tmp")
+    subprocess.call(cmd, cwd=MOONLIGHT_CWD)  # see MOONLIGHT_CWD for why not ~ or /tmp
     pygame.init()
     init_input()
     screen = pygame.display.set_mode(RESOLUTION or (0, 0), pygame.FULLSCREEN)
@@ -1376,11 +1535,11 @@ def do_update():
     global pending_updates
     log_lines = []
     failed = None
-    rc = run_apt_live(["/usr/bin/apt-get", "update"], "Updating package lists...", log_lines)
+    rc = run_apt_live([*SUDO_APT, "update"], "Updating package lists...", log_lines)
     if rc != 0:
         failed = f"Updating package lists failed (exit {rc})"
     else:
-        rc = run_apt_live(["/usr/bin/apt-get", "full-upgrade", "-y"], "Installing updates...", log_lines)
+        rc = run_apt_live([*SUDO_APT, "full-upgrade", "-y"], "Installing updates...", log_lines)
         if rc != 0:
             failed = f"Installing updates failed (exit {rc})"
     pygame.event.clear()  # discard any input queued up while the update ran uninterruptibly
@@ -1439,7 +1598,7 @@ def offer_autoremove():
     if choice != remove_label:
         return
     log_lines = []
-    rc = run_apt_live(["/usr/bin/apt-get", "autoremove", "-y"], "Removing unused packages...", log_lines)
+    rc = run_apt_live([*SUDO_APT, "autoremove", "-y"], "Removing unused packages...", log_lines)
     pygame.event.clear()
     if rc != 0:
         msg = f"Removing unused packages failed (exit {rc})"
@@ -1711,7 +1870,9 @@ def run_bluetooth_page():
     def render_bg():
         screen.fill(THEME["bg"])
         title = title_font.render("Bluetooth", True, TEXT)
-        screen.blit(title, (margin, 36))
+        icon_h = round(title.get_height() * 0.8)
+        draw_bluetooth_icon(screen, (margin + icon_h // 3, 36 + title.get_height() // 2), icon_h, BLUETOOTH_BLUE)
+        screen.blit(title, (margin + icon_h * 2 // 3 + 16, 36))
         draw_clock(margin, 36, title.get_height())
         note = hint_font.render(
             "A: connect/pair/manage   Y: scan for new gamepads   B: back", True, MUTED
@@ -2191,7 +2352,7 @@ def quit_running_app(name):
     env = moonlight_env()
     try:
         subprocess.run(["moonlight-qt", "quit", MOONLIGHT_HOST], capture_output=True, text=True,
-                       timeout=30, env=env, cwd="/tmp", stdin=subprocess.DEVNULL)
+                       timeout=30, env=env, cwd=MOONLIGHT_CWD, stdin=subprocess.DEVNULL)
     except Exception as e:
         print(f"moonlight-qt quit failed: {e}")
     refresh_host_status()
@@ -2210,7 +2371,7 @@ def moonlight_list_status(target):
     try:
         result = subprocess.run(["moonlight-qt", "list", target], capture_output=True, text=True,
                                 timeout=30, env=moonlight_env(),
-                                cwd="/tmp", stdin=subprocess.DEVNULL)
+                                cwd=MOONLIGHT_CWD, stdin=subprocess.DEVNULL)
     except Exception:
         return "unreachable", None
     if NOT_PAIRED_TEXT in result.stdout + result.stderr:
@@ -2269,7 +2430,7 @@ def run_pairing(draw_bg=None):
     pin = f"{random.randint(0, 9999):04d}"
     proc = subprocess.Popen(["moonlight-qt", "pair", target, "--pin", pin],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
-                            env=moonlight_env(), cwd="/tmp")
+                            env=moonlight_env(), cwd=MOONLIGHT_CWD)
     # Don't rely on `pair` exiting - it can sit on a hidden dialog. A background
     # thread asks `list` every few seconds; as soon as it works, we're paired.
     watch = {"paired": False, "stop": False}

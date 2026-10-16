@@ -18,14 +18,16 @@ PI="${PI:-$(cat deploy/pi-target 2>/dev/null || true)}"
 bundle="$(mktemp)"
 git bundle create "$bundle" --all 2>/dev/null
 echo "Sending $(git describe --tags --always) ($(du -k "$bundle" | cut -f1) KB) to $PI"
-ssh "$PI" "cat > /tmp/lunapad.bundle" < "$bundle"
+# A private folder (mktemp -d, mode 0700) on the Pi: fixed /tmp names could be
+# swapped by another account before sudo runs install.sh from there.
+remote="$(ssh "$PI" 'd="$(mktemp -d)" && cat > "$d/lunapad.bundle" && echo "$d"' < "$bundle")"
 rm -f "$bundle"
+case "$remote" in /tmp/*) ;; *) echo "FAIL: unexpected temp folder on the Pi: $remote"; exit 1 ;; esac
 
 ssh -t "$PI" "
 set -e
 command -v git >/dev/null || { echo 'Installing git first...'; sudo apt-get install -y -q git; }
-rm -rf /tmp/lunapad-src
-git clone --quiet /tmp/lunapad.bundle /tmp/lunapad-src
-sudo ${REF:+LUNAPAD_REF='$REF'} ${HOST:+LUNAPAD_HOST='$HOST'} bash /tmp/lunapad-src/install.sh
-rm -rf /tmp/lunapad-src /tmp/lunapad.bundle
+git clone --quiet '$remote/lunapad.bundle' '$remote/src'
+sudo ${REF:+LUNAPAD_REF='$REF'} ${HOST:+LUNAPAD_HOST='$HOST'} bash '$remote/src/install.sh'
+rm -rf '$remote'
 "

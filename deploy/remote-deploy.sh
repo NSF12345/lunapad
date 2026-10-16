@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs ON THE PI as root, from the folder deploy.sh unpacked (/tmp/lunapad-dev).
+# Runs ON THE PI as root, from the private temp folder deploy.sh unpacked into.
 # Copies the files into /opt/lunapad, restarts the launcher (the lunapad
 # account's boot loop relaunches it) and verifies the new process.
 set -euo pipefail
@@ -11,7 +11,7 @@ cd "$(dirname "$0")"
 # compile everything before copying anything in, so a bad file changes nothing
 for f in *.py; do python3 -m py_compile "$f"; done
 rm -rf __pycache__
-for f in lunapad.py settings.py bluetooth_icon.png splash.png; do
+for f in lunapad.py settings.py splash.png; do
     install -o root -g root -m 0644 "$f" "$APP_DIR/$f"
 done
 install -o root -g root -m 0644 BUILD "$APP_DIR/BUILD"

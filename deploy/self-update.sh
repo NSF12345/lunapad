@@ -12,7 +12,7 @@ main() {
     local channel="${1:-}" app_dir repo ref
     app_dir="$(cd "$(dirname "$0")/.." && pwd)"
     repo="${LUNAPAD_REPO:-https://github.com/NSF12345/lunapad.git}"
-    git_() { git -c safe.directory='*' -C "$app_dir" "$@"; }
+    git_() { git -C "$app_dir" "$@"; }   # root-owned, so git trusts it without safe.directory
     [ "$(id -u)" -eq 0 ] || { echo "Run as root"; exit 1; }
     case "$channel" in stable|beta) ;; *) echo "Usage: self-update.sh stable|beta"; exit 2 ;; esac
 

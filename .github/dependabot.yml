@@ -1,0 +1,9 @@
+# The workflow actions are pinned to exact commits (a tag like v4 can be moved by
+# whoever controls the action). Dependabot opens a PR into beta when they update.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: beta
+    schedule:
+      interval: monthly

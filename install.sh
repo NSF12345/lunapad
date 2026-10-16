@@ -49,7 +49,7 @@ if [ ! -f "${BASH_SOURCE[0]:-}" ]; then   # piped in (curl ... | sudo bash): fet
     exit "$rc"
 fi
 
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"   # physical path: git's safe.directory compares real paths
 [ -f "$SRC/lunapad.py" ] || { echo "Run this from a Lunapad checkout ($SRC has no lunapad.py)"; exit 1; }
 
 say "Packages"
@@ -70,7 +70,10 @@ id "$APP_USER"
 fi
 
 say "Code: $APP_DIR"
-git_() { git -c safe.directory='*' "$@"; }   # the source checkout may belong to another user
+# git refuses repos owned by another user when run as root (their config could make it
+# run commands). Trust exactly the two this script uses: the source checkout (often the
+# admin's own clone) and $APP_DIR - nothing else.
+git_() { git -c safe.directory="$SRC" -c safe.directory="$APP_DIR" "$@"; }
 if [ "$SRC" != "$APP_DIR" ]; then
     if [ -d "$APP_DIR/.git" ]; then
         git_ -C "$APP_DIR" fetch --tags --force "$SRC" '+refs/heads/*:refs/remotes/source/*'
@@ -85,22 +88,27 @@ LATEST="$(git_ -C "$APP_DIR" tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.
 REF="${LUNAPAD_REF:-${LATEST:-$(git_ -C "$SRC" rev-parse HEAD)}}"
 git_ -C "$APP_DIR" checkout --quiet --force "$REF"
 # A self-update to anything but a release tag came from the beta channel - say so in the title.
-CHANNEL=""
+# A beta build shows just its commit: `git describe` would name the nearest tag in beta's
+# own history, which can be an older release than the version it's based on.
+DESCRIBE="$(git_ -C "$APP_DIR" describe --tags --always)"
 if [ "$UPDATE" = 1 ] && ! git_ -C "$APP_DIR" tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' >/dev/null; then
-    CHANNEL="beta "
+    DESCRIBE="beta $(git_ -C "$APP_DIR" rev-parse --short HEAD)"
 fi
-echo "$CHANNEL$(git_ -C "$APP_DIR" describe --tags --always) $(date +%Y-%m-%d)" > "$APP_DIR/BUILD"
+echo "$DESCRIBE $(date +%Y-%m-%d)" > "$APP_DIR/BUILD"
 chown -R root:root "$APP_DIR"
 chmod -R a+rX,go-w "$APP_DIR"
 echo "Installed $(cat "$APP_DIR/BUILD")"
 
 say "Boot loop, sudo rules, apt config"
 # From the installed version, not the source: they must match the code in $APP_DIR.
-install -o "$APP_USER" -g "$APP_USER" -m 0644 "$APP_DIR/deploy/bash_profile" "$APP_HOME/.bash_profile"
-sed -e "s|__USER__|$APP_USER|g" -e "s|__APPDIR__|$APP_DIR|g" "$APP_DIR/deploy/sudoers-lunapad" > /tmp/lunapad_sudoers
-visudo -cf /tmp/lunapad_sudoers   # a broken sudoers file can lock out sudo - check first
-install -o root -g root -m 0440 /tmp/lunapad_sudoers /etc/sudoers.d/lunapad
-rm -f /tmp/lunapad_sudoers
+# Anything in $APP_HOME belongs to the lunapad account, so write there AS that account:
+# done as root, a symlink it planted could redirect the write or the chown.
+runuser -u "$APP_USER" -- install -m 0644 "$APP_DIR/deploy/bash_profile" "$APP_HOME/.bash_profile"
+sudoers_tmp="$(mktemp)"   # private (0600), not a fixed /tmp name another account could plant
+sed -e "s|__USER__|$APP_USER|g" -e "s|__APPDIR__|$APP_DIR|g" "$APP_DIR/deploy/sudoers-lunapad" > "$sudoers_tmp"
+visudo -cf "$sudoers_tmp"   # a broken sudoers file can lock out sudo - check first
+install -o root -g root -m 0440 "$sudoers_tmp" /etc/sudoers.d/lunapad
+rm -f "$sudoers_tmp"
 install -o root -g root -m 0644 "$APP_DIR/deploy/apt-lunapad.conf" /etc/apt/apt.conf.d/90lunapad-noprompt
 
 if [ "$UPDATE" = 1 ]; then
@@ -110,12 +118,12 @@ fi
 
 CONFIG="$APP_HOME/.config/lunapad/lunapad.toml"
 if [ -n "${LUNAPAD_HOST:-}" ]; then
-    if [ -e "$CONFIG" ]; then
+    if [ -e "$CONFIG" ] || [ -L "$CONFIG" ]; then
         echo "LUNAPAD_HOST ignored: settings already exist ($CONFIG)"
     elif [[ "$LUNAPAD_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
-        install -d -o "$APP_USER" -g "$APP_USER" "$APP_HOME/.config" "$APP_HOME/.config/lunapad"
-        printf '[host]\naddress = "%s"\n' "$LUNAPAD_HOST" > "$CONFIG"   # the rest fills in with defaults
-        chown "$APP_USER:$APP_USER" "$CONFIG"
+        runuser -u "$APP_USER" -- mkdir -p "$(dirname "$CONFIG")"
+        printf '[host]\naddress = "%s"\n' "$LUNAPAD_HOST" \
+            | runuser -u "$APP_USER" -- tee "$CONFIG" >/dev/null   # the rest fills in with defaults
         echo "Host set to $LUNAPAD_HOST"
     else
         echo "LUNAPAD_HOST ignored: '$LUNAPAD_HOST' isn't a hostname or IP - set it up on the TV instead"

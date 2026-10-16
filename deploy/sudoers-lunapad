@@ -3,6 +3,6 @@
 # Lets the launcher reboot, run apt updates and update itself (self-update.sh, which
 # is root-owned in __APPDIR__), and its login profile show the boot splash, without a
 # password prompt - nothing else. Each is limited to those exact commands.
-__USER__ ALL=(root) NOPASSWD: /usr/sbin/reboot, /usr/bin/apt-get update, /usr/bin/apt-get full-upgrade -y, /usr/bin/apt-get autoremove -y, /bin/bash __APPDIR__/deploy/self-update.sh stable, /bin/bash __APPDIR__/deploy/self-update.sh beta, /usr/bin/fbi -T 1 -noverbose -a __APPDIR__/splash.png
-# sudo strips the environment; keep DEBIAN_FRONTEND so debconf never asks questions.
-Defaults!/usr/bin/apt-get env_keep += "DEBIAN_FRONTEND"
+# apt runs through env with DEBIAN_FRONTEND fixed in the rule itself: debconf pastes
+# that variable into Perl code it evaluates, so it must never come from the caller.
+__USER__ ALL=(root) NOPASSWD: /usr/sbin/reboot, /usr/bin/env DEBIAN_FRONTEND\=noninteractive /usr/bin/apt-get update, /usr/bin/env DEBIAN_FRONTEND\=noninteractive /usr/bin/apt-get full-upgrade -y, /usr/bin/env DEBIAN_FRONTEND\=noninteractive /usr/bin/apt-get autoremove -y, /bin/bash __APPDIR__/deploy/self-update.sh stable, /bin/bash __APPDIR__/deploy/self-update.sh beta, /usr/bin/fbi -T 1 -noverbose -a __APPDIR__/splash.png
