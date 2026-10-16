@@ -78,11 +78,6 @@ SCHEMA = [
     Setting("stream.quit_app_after", "Quit app when stream ends", "bool", False,
             "Close the app on the PC when you leave the stream, instead of leaving it to resume."),
 
-    # --- display ---
-    Setting("display.resolution", "Screen resolution", "choice", "1920x1080",
-            "The launcher's own resolution on the TV.", restart=True,
-            choices=[("native", "Native"), ("1280x720", "720p"), ("1920x1080", "1080p"), ("3840x2160", "4K")]),
-
     # --- idle ---
     Setting("idle.dim_after_minutes", "Dim screen after", "choice", 5,
             "Minutes without input before the screen dims (burn-in protection).",
@@ -131,7 +126,7 @@ SCHEMA = [
 BY_KEY = {s.key: s for s in SCHEMA}
 
 SECTION_TITLES = {
-    "host": "Host", "stream": "Moonlight", "display": "Launcher display", "idle": "Idle",
+    "host": "Host", "stream": "Moonlight", "idle": "Idle",
     "apps": "Apps", "updates": "Updates", "input": "Input", "controllers": "Controllers",
 }
 # Shown next to a section's title on the Settings page, and above it in the file.
@@ -291,7 +286,3 @@ def moonlight_host():
     return f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
 
 
-def display_resolution():
-    """(width, height) for the launcher's screen, or None for native."""
-    v = get("display.resolution")
-    return None if v == "native" else tuple(int(x) for x in v.split("x"))
