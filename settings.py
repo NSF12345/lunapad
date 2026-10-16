@@ -98,6 +98,10 @@ SCHEMA = [
     Setting("idle.fade_seconds", "Fade time", "int", 15,
             "Seconds each fade (to dimmed, then to black) takes.", page=False),
 
+    # --- controllers ---
+    Setting("controllers.input_flash", "Flash on button press", "bool", True,
+            "Briefly outline a controller's card when it's used, to see which pad is which."),
+
     # --- apps ---
     Setting("apps.box_art", "Box art on tiles", "bool", True,
             "Show each app's box art from Sunshine on its dashboard tile."),
