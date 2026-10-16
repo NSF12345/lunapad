@@ -1414,7 +1414,7 @@ def draw_frame():
             # input indicator: outline flashes when this pad is used, fading out
             # over INPUT_FLASH_SECONDS
             age = time.time() - last_input_at.get(c["iid"], 0) if c.get("iid") is not None else INPUT_FLASH_SECONDS
-            if age < INPUT_FLASH_SECONDS:
+            if age < INPUT_FLASH_SECONDS and cfg.get("controllers.input_flash"):
                 glow = pygame.Surface(card_rect.size, pygame.SRCALPHA)
                 alpha = int(255 * (1 - age / INPUT_FLASH_SECONDS))
                 pygame.draw.rect(glow, (*ACCENT, alpha), glow.get_rect(), width=3, border_radius=12)
