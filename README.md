@@ -18,6 +18,7 @@ A gamepad-only launcher that turns a Raspberry Pi 4 into a TV box for streaming 
 ## Features
 
 - **Dashboard** — one tile per app on the host (from `moonlight-qt list`, cached for when the host is off), plus connected controllers with Bluetooth and battery status
+- **Box art** — each app tile shows its box art from Sunshine, and the Moonlight Window tile shows Moonlight's own icon. Both can be turned off in **Settings → Apps**, which can also hide the Moonlight Window tile altogether
 - **Bluetooth page** — list, scan for, pair, connect, disconnect and forget gamepads
 - **Update** — updates Lunapad itself from GitHub (the **Stable** or **Beta** channel, chosen in Settings → Updates), and the Pi's apt packages, with live output. After a system update it offers to remove packages no longer needed (old kernels), showing the list first
 - **Reload Apps** — re-read the host's app list now, instead of waiting for the 10-minute auto-refresh

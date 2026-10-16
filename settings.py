@@ -98,6 +98,12 @@ SCHEMA = [
     Setting("idle.fade_seconds", "Fade time", "int", 15,
             "Seconds each fade (to dimmed, then to black) takes.", page=False),
 
+    # --- apps ---
+    Setting("apps.box_art", "Box art on tiles", "bool", True,
+            "Show each app's box art from Sunshine on its dashboard tile."),
+    Setting("apps.moonlight_tile", "Moonlight Window tile", "bool", True,
+            "Show the Moonlight Window tile, which opens Moonlight's own interface. Off gives its space to the apps."),
+
     # --- updates ---
     Setting("updates.channel", "Lunapad updates", "choice", "stable",
             "Stable: released versions. Beta: the newest changes first, which may still have bugs.",
