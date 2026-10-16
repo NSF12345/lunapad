@@ -2477,6 +2477,20 @@ def edit_setting_text(st, draw_bg):
     start = 1 if re.fullmatch(r"[0-9.]*", current) else 0
     return keyboard_popup(st.label, current, [HOST_FULL, HOST_NUMPAD], 253, validate, draw_bg, start=start)
 
+def confirm_channel_switch(channel, draw_bg):
+    """Asks before switching the update channel. True to go ahead."""
+    if channel == "beta":
+        title = "Switch to the Beta channel?"
+        lines = ["Beta gets new changes before they're released,",
+                 "and they may still have bugs.",
+                 "Lunapad will offer to update to the latest beta."]
+    else:
+        title = "Switch to the Stable channel?"
+        lines = ["Stable gets tested releases only.",
+                 "If this Pi runs a newer beta, Lunapad will offer",
+                 "the latest release, even though it's older."]
+    return confirm_popup(title, lines, confirm_label="Confirm", cancel_label="Cancel", draw_bg=draw_bg)
+
 def run_settings_page():
     rows = settings_rows()
     selectable = [i for i, (kind, _) in enumerate(rows) if kind == "setting"]
@@ -2505,7 +2519,11 @@ def run_settings_page():
             if new is not None:
                 cfg.set(st.key, new)
         else:
-            cfg.set(st.key, cfg.cycle(st.key, step))
+            new = cfg.cycle(st.key, step)
+            if st.key == "updates.channel" and not confirm_channel_switch(
+                    new, lambda: draw_settings_page(rows, sel, scroll)):
+                return
+            cfg.set(st.key, new)
 
     active = True
     while active:
