@@ -101,8 +101,8 @@ SCHEMA = [
     # --- apps ---
     Setting("apps.box_art", "Box art on tiles", "bool", True,
             "Show each app's box art from Sunshine on its dashboard tile."),
-    Setting("apps.moonlight_icon", "Moonlight icon", "bool", True,
-            "Show Moonlight's own icon (from its install on this Pi) on the Moonlight Window tile."),
+    Setting("apps.moonlight_tile", "Moonlight Window tile", "bool", True,
+            "Show the Moonlight Window tile, which opens Moonlight's own interface. Off gives its space to the apps."),
 
     # --- updates ---
     Setting("updates.channel", "Lunapad updates", "choice", "stable",

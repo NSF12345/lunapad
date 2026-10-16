@@ -916,7 +916,7 @@ def _svg_sized(data, height):
 def moonlight_icon_surface(height):
     """Moonlight's installed icon at `height` px, or None (switched off, not
     installed, or unreadable). Cached per size."""
-    if not cfg.get("apps.moonlight_icon"):
+    if not cfg.get("apps.box_art"):  # Moonlight's icon follows the box art setting
         return None
     if height not in _moonlight_icon_cache:
         icon = None
@@ -941,7 +941,7 @@ def moonlight_icon_surface(height):
 _box_art_cache = {}
 
 def box_art_surface(app_name, height):
-    """The app's box art scaled to `height` (keeping its shape, rounded corners),
+    """The app's box art fitted inside a `height` square (keeping its shape, rounded corners),
     or None: no art downloaded, box art switched off, or unreadable. Cached, and
     reloaded when the file changes."""
     app_id = host_app_ids.get(app_name)
@@ -956,8 +956,9 @@ def box_art_surface(app_name, height):
     if key not in _box_art_cache:
         try:
             img = pygame.image.load(path).convert_alpha()
-            width = max(1, round(img.get_width() * height / img.get_height()))
-            art = pygame.transform.smoothscale(img, (width, height))
+            scale = height / max(img.get_width(), img.get_height())  # fit inside a height x height square
+            art = pygame.transform.smoothscale(
+                img, (max(1, round(img.get_width() * scale)), max(1, round(img.get_height() * scale))))
             mask = pygame.Surface(art.get_size(), pygame.SRCALPHA)
             pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=10)
             art.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
@@ -1280,8 +1281,9 @@ def draw_panel(x, y, pw, ph):
     pygame.draw.rect(panel, (*PANEL_BG, 210), panel.get_rect(), border_radius=20)
     screen.blit(panel, (x, y))
 
-def draw_tile(rect, label, is_selected, danger=False, text_rect=None):
-    """A tile with `label` centred in `text_rect` (default: the whole tile)."""
+def draw_tile(rect, label, is_selected, danger=False, text_rect=None, align="center"):
+    """A tile with `label` in `text_rect` (default: the whole tile), centred or
+    left-aligned (`align="left"`)."""
     text_rect = text_rect or rect
     if is_selected:
         pygame.draw.rect(screen, ACCENT, rect, border_radius=16)
@@ -1291,7 +1293,10 @@ def draw_tile(rect, label, is_selected, danger=False, text_rect=None):
         pygame.draw.rect(screen, DIVIDER, rect, width=1, border_radius=16)
         text_color = BAD if danger else TEXT
     text_surf = fit_text(label, (item_font, subtitle_font), text_color, text_rect.width - 40)
-    screen.blit(text_surf, text_surf.get_rect(center=text_rect.center))
+    if align == "left":
+        screen.blit(text_surf, text_surf.get_rect(midleft=(text_rect.x, text_rect.centery)))
+    else:
+        screen.blit(text_surf, text_surf.get_rect(center=text_rect.center))
     return text_surf
 
 def draw_clock(margin, title_y, title_h):
@@ -1325,7 +1330,8 @@ def draw_frame():
         grid_keys = [app_key(app) for app in host_apps]
     # Start on the first tile, and fall back to it if the selected tile is gone
     # (an app vanished from the host's list, or the apps are hidden while unpaired).
-    if selected not in set(grid_keys) | (set(NODES) - {"pair", "sethost"}):
+    hidden = {"pair", "sethost"} | (set() if cfg.get("apps.moonlight_tile") else {"moonlight"})
+    if selected not in set(grid_keys) | (set(NODES) - hidden):
         selected = grid_keys[0]
     if bg:
         screen.blit(bg, (0, 0))
@@ -1470,7 +1476,8 @@ def draw_frame():
     grid_x, grid_w = right_x + rpad, right_w - rpad * 2
     tile_gap = 24
     app_rows = (len(grid_keys) + 1) // 2
-    rows = app_rows + 1
+    show_moonlight = cfg.get("apps.moonlight_tile")
+    rows = app_rows + (1 if show_moonlight else 0)
     tile_h = min(240, (panel_y + panel_h - rpad - grid_top - tile_gap * (rows - 1)) // rows)
     half_w = (grid_w - tile_gap) // 2
     for i, key in enumerate(grid_keys):
@@ -1479,24 +1486,27 @@ def draw_frame():
         tile_rects[key] = pygame.Rect(grid_x + col * (half_w + tile_gap),
                                                grid_top + row * (tile_h + tile_gap),
                                                grid_w if alone else half_w, tile_h)
-    tile_rects["moonlight"] = pygame.Rect(grid_x, grid_top + app_rows * (tile_h + tile_gap), grid_w, tile_h)
+    if show_moonlight:
+        tile_rects["moonlight"] = pygame.Rect(grid_x, grid_top + app_rows * (tile_h + tile_gap), grid_w, tile_h)
     for key, rect in tile_rects.items():
-        # box art on the left of an app tile (full cover, tile height), name beside it
-        art_inset = 10
-        art_h = rect.height - art_inset * 2
+        # Art sits in the same square slot on every tile (whatever its shape), and the
+        # name is left-aligned after it, so names line up from tile to tile.
+        art_inset = 14
+        slot = rect.height - art_inset * 2
         if key.startswith("app:"):
-            art = box_art_surface(key[4:], art_h)
+            art = box_art_surface(key[4:], slot)
         elif key == "moonlight":
-            art = moonlight_icon_surface(art_h)
+            art = moonlight_icon_surface(slot)
         else:
             art = None
         text_rect = rect
         if art:
-            text_left = rect.x + art_inset + art.get_width()
+            slot_rect = pygame.Rect(rect.x + art_inset, rect.y + art_inset, slot, slot)
+            text_left = slot_rect.right + 28
             text_rect = pygame.Rect(text_left, rect.y, rect.right - text_left, rect.height)
-        draw_tile(rect, node_label(key), selected == key, text_rect=text_rect)
+        draw_tile(rect, node_label(key), selected == key, text_rect=text_rect, align="left" if art else "center")
         if art:
-            screen.blit(art, (rect.x + art_inset, rect.y + art_inset))
+            screen.blit(art, art.get_rect(center=slot_rect.center))
         if running and key == app_key(running):
             # the app with a session running on the host: outline + resume hint
             pygame.draw.rect(screen, ACCENT, rect, width=3, border_radius=16)
@@ -1504,7 +1514,10 @@ def draw_frame():
             hint_surf = hint_font.render("RUNNING  -  A resume  -  B quit", True, hint_color)
             if hint_surf.get_width() > text_rect.width - 20:
                 hint_surf = hint_font.render("RUNNING", True, hint_color)
-            screen.blit(hint_surf, hint_surf.get_rect(midbottom=(text_rect.centerx, rect.bottom - 14)))
+            if art:
+                screen.blit(hint_surf, hint_surf.get_rect(bottomleft=(text_rect.x, rect.bottom - 14)))
+            else:
+                screen.blit(hint_surf, hint_surf.get_rect(midbottom=(text_rect.centerx, rect.bottom - 14)))
 
     # Settings: a chip at the top-right of the host panel
     chip_selected = selected == "settings"
