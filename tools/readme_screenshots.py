@@ -1,5 +1,5 @@
 """Renders the README screenshots (docs/images/*.png, 1280x720) from lunapad.py's
-own drawing code, with sample data - no real hosts, addresses or devices.
+own drawing code, with sample data - no real hosts, addresses, devices or game art.
 
     pip install pygame-ce
     python tools/readme_screenshots.py [out_dir]     (default: docs/images/)
@@ -37,6 +37,23 @@ ns.update(CLIENT_IP="192.168.1.50", host_reachable=True, pending_updates=3, moon
 ns["host_apps"] = ["Desktop", "Steam Big Picture", "Playnite"]
 ns["host_app_ids"] = {"Desktop": 1, "Steam Big Picture": 2, "Playnite": 3}
 ns["host_running_app_id"] = 2
+
+
+def sample_cover(app_id, top, bottom, letter):
+    """A made-up 600x900 box art cover (gradient + initial) - never real game art."""
+    s = pygame.Surface((600, 900))
+    for y in range(900):
+        t = y / 899
+        s.fill([round(a + (b - a) * t) for a, b in zip(top, bottom, strict=True)], (0, y, 600, 1))
+    glyph = pygame.font.Font(None, 420).render(letter, True, (255, 255, 255))
+    s.blit(glyph, glyph.get_rect(center=(300, 430)))
+    os.makedirs(ns["BOXART_DIR"], exist_ok=True)
+    pygame.image.save(s, ns["box_art_path"](app_id))
+
+
+sample_cover(1, (40, 70, 140), (10, 20, 50), "D")
+sample_cover(2, (30, 40, 60), (90, 120, 160), "S")
+sample_cover(3, (120, 60, 150), (30, 15, 45), "P")
 pads = [{"name": "Google Stadia Controller", "battery": "85", "connection": "Bluetooth", "mac": None},
         {"name": "8BitDo Ultimate 2C Wireless Controller", "battery": None, "connection": "2.4G", "mac": None}]
 cards = ns["label_controllers"]([dict(p, iid=i) for i, p in enumerate(pads)])
