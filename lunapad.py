@@ -52,7 +52,6 @@ HOST_PORT = cfg.get("host.port")  # Sunshine's HTTP port
 HOST_HTTPS_PORT = HOST_PORT - 5  # Sunshine's HTTPS port is always 5 below its HTTP one (47984)
 MOONLIGHT_HOST = cfg.moonlight_host()  # what moonlight-qt is given: host, or host:port
 HOST_URL_HOST = f"[{HOST}]" if ":" in HOST else HOST  # for http:// URLs
-RESOLUTION = cfg.display_resolution()
 STICK_TRIGGER = cfg.get("input.stick_trigger")
 STICK_RELEASE = cfg.get("input.stick_release")
 CHECK_INTERVAL = cfg.get("updates.check_hours") * 3600
@@ -265,7 +264,37 @@ def input_action(event, stick_state):
 pygame.init()
 init_input()
 
-screen = pygame.display.set_mode(RESOLUTION or (0, 0), pygame.FULLSCREEN)
+# The UI is laid out for 1920x1080 and always drawn at that size, whatever the TV
+# runs at; SDL scales it to the screen on the GPU. That's what Kodi/OSMC do on a
+# Pi ("limit GUI size" to 1080p): one layout, never too small or overflowing, and
+# streams still play at their own resolution (Settings -> Moonlight -> Resolution).
+UI_SIZE = (1920, 1080)
+_display = None  # the real screen, only when scaling has to happen in software
+
+def open_display():
+    """The 1920x1080 surface everything draws on. Normally SDL scales it to the
+    TV on the GPU (pygame.SCALED). If that's unavailable, it's an off-screen
+    surface scaled to the real screen in software on each flip (see _flip)."""
+    global _display
+    os.environ.setdefault("SDL_RENDER_SCALE_QUALITY", "linear")  # smooth scaling, not blocky
+    try:
+        _display = None
+        return pygame.display.set_mode(UI_SIZE, pygame.FULLSCREEN | pygame.SCALED)
+    except pygame.error as e:
+        print(f"GPU scaling unavailable ({e}) - scaling in software")
+        _display = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        return pygame.Surface(UI_SIZE)
+
+_sdl_flip = pygame.display.flip
+
+def _flip():
+    if _display is not None:
+        pygame.transform.smoothscale(screen, _display.get_size(), _display)
+    _sdl_flip()
+
+pygame.display.flip = _flip
+
+screen = open_display()
 pygame.mouse.set_visible(False)
 w, h = screen.get_size()
 
@@ -1622,7 +1651,7 @@ def launch(cmd):
     subprocess.call(cmd, cwd=MOONLIGHT_CWD)  # see MOONLIGHT_CWD for why not ~ or /tmp
     pygame.init()
     init_input()
-    screen = pygame.display.set_mode(RESOLUTION or (0, 0), pygame.FULLSCREEN)
+    screen = open_display()
     pygame.mouse.set_visible(False)
     start_timers()
     note_activity()  # the stream was activity - don't come back already dimmed
