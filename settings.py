@@ -98,6 +98,12 @@ SCHEMA = [
     Setting("idle.fade_seconds", "Fade time", "int", 15,
             "Seconds each fade (to dimmed, then to black) takes.", page=False),
 
+    # --- apps ---
+    Setting("apps.box_art", "Box art on tiles", "bool", True,
+            "Show each app's box art from Sunshine on its dashboard tile."),
+    Setting("apps.moonlight_icon", "Moonlight icon", "bool", True,
+            "Show Moonlight's own icon (from its install on this Pi) on the Moonlight Window tile."),
+
     # --- updates ---
     Setting("updates.channel", "Lunapad updates", "choice", "stable",
             "Stable: released versions. Beta: the newest changes first, which may still have bugs.",

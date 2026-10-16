@@ -1,5 +1,5 @@
 import os, sys, re, csv, random, shutil, subprocess, threading, time, json, socket, ipaddress, glob, pygame
-import ssl, uuid, tempfile, http.client
+import ssl, uuid, tempfile, http.client, io
 import urllib.request
 import xml.etree.ElementTree as ET
 import settings as cfg
@@ -782,19 +782,20 @@ def parse_applist(body):
             continue
     return ids or None
 
-def fetch_app_ids_direct():
-    """{app name: ID} from the host's /applist, the request Moonlight makes
-    itself, authenticated with Moonlight's pairing certificate. Unlike
-    `moonlight-qt list --csv` it never waits on box art. None on any failure.
-    The host must present the certificate saved when this Pi paired with it
-    (as Moonlight checks), so nothing else on the network can stand in for it."""
+def host_https_get(paths, what):
+    """GETs each of `paths` (e.g. "/applist") from the host the way Moonlight
+    does: over HTTPS, authenticated with Moonlight's pairing certificate, and
+    only if the host presents the certificate saved when this Pi paired with it,
+    so nothing else on the network can stand in for it. Returns a list with one
+    (HTTP status, body) per path, or None per path that failed; or None if the
+    host can't be asked at all. `what` names the caller in log messages."""
     identity = read_moonlight_identity()
     if identity is None:
-        print("Direct app IDs: no pairing credentials in Moonlight.conf")
+        print(f"{what}: no pairing credentials in Moonlight.conf")
         return None
     cert_pem, key_pem, server_certs = identity
     if not server_certs:
-        print("Direct app IDs: no paired host certificate in Moonlight.conf")
+        print(f"{what}: no paired host certificate in Moonlight.conf")
         return None
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname = False
@@ -807,32 +808,164 @@ def fetch_app_ids_direct():
             f.write(cert_pem.strip() + "\n" + key_pem.strip() + "\n")
         ctx.load_cert_chain(path)
     except Exception as e:
-        print(f"Direct app IDs: couldn't load the pairing certificate: {e}")
+        print(f"{what}: couldn't load the pairing certificate: {e}")
         return None
     finally:
         try:
             os.unlink(path)
         except OSError:
             pass
-    conn = http.client.HTTPSConnection(HOST, HOST_HTTPS_PORT, context=ctx, timeout=10)
-    try:
-        conn.connect()
-        presented = conn.sock.getpeercert(binary_form=True)
-        if presented not in {ssl.PEM_cert_to_DER_cert(c) for c in server_certs}:
-            print("Direct app IDs: the host's certificate isn't the paired one - ignoring it")
-            return None
-        conn.request("GET", f"/applist?uniqueid=0123456789ABCDEF&uuid={uuid.uuid4().hex}")
-        response = conn.getresponse()
-        body = response.read()
-    except Exception as e:
-        print(f"Direct app IDs: request failed: {e}")
+    pinned = {ssl.PEM_cert_to_DER_cert(c) for c in server_certs}
+    results = []
+    for path in paths:  # a connection per request: works whether or not the host keeps them open
+        conn = http.client.HTTPSConnection(HOST, HOST_HTTPS_PORT, context=ctx, timeout=10)
+        try:
+            conn.connect()
+            if conn.sock.getpeercert(binary_form=True) not in pinned:
+                print(f"{what}: the host's certificate isn't the paired one - ignoring it")
+                return None
+            sep = "&" if "?" in path else "?"
+            conn.request("GET", f"{path}{sep}uniqueid=0123456789ABCDEF&uuid={uuid.uuid4().hex}")
+            response = conn.getresponse()
+            results.append((response.status, response.read()))
+        except Exception as e:
+            print(f"{what}: request failed: {e}")
+            results.append(None)
+        finally:
+            conn.close()
+    return results
+
+def fetch_app_ids_direct():
+    """{app name: ID} from the host's /applist (see host_https_get). Unlike
+    `moonlight-qt list --csv` it never waits on box art. None on any failure."""
+    results = host_https_get(["/applist"], "Direct app IDs")
+    if not results or results[0] is None:
         return None
-    finally:
-        conn.close()
-    if response.status != 200:
-        print(f"Direct app IDs: host answered HTTP {response.status}")
+    status, body = results[0]
+    if status != 200:
+        print(f"Direct app IDs: host answered HTTP {status}")
         return None
     return parse_applist(body)
+
+# --- Box art on the app tiles (issue #22) ---
+BOXART_DIR = os.path.join(cfg.CACHE_DIR, "boxart")
+_IMAGE_TYPES = {b"\x89PNG": ".png", b"\xff\xd8\xff": ".jpg"}  # saved under its real extension: pygame needs it
+
+def box_art_path(app_id):
+    """The app's downloaded box art file, or where a PNG would go if there's none."""
+    for ext in (".png", ".jpg"):
+        path = os.path.join(BOXART_DIR, f"{app_id}{ext}")
+        if os.path.exists(path):
+            return path
+    return os.path.join(BOXART_DIR, f"{app_id}.png")
+
+def fetch_box_art(app_ids, refresh=False):
+    """Downloads each app's box art from the host (Sunshine's /appasset, as
+    Moonlight requests it) into BOXART_DIR, skipping ones already there unless
+    `refresh`. Runs in the background; a failure just leaves a plain tile."""
+    wanted = [i for i in app_ids if refresh or not os.path.exists(box_art_path(i))]
+    if not wanted:
+        return
+    results = host_https_get([f"/appasset?appid={i}&AssetType=2&AssetIdx=0" for i in wanted], "Box art")
+    if not results:
+        return
+    os.makedirs(BOXART_DIR, exist_ok=True)
+    for app_id, result in zip(wanted, results, strict=False):
+        ext = next((e for magic, e in _IMAGE_TYPES.items() if result and result[1].startswith(magic)), None)
+        if not result or result[0] != 200 or not ext:
+            continue
+        path = os.path.join(BOXART_DIR, f"{app_id}{ext}")
+        try:
+            with open(path + ".tmp", "wb") as f:
+                f.write(result[1])
+            old = box_art_path(app_id)
+            if old != path and os.path.exists(old):
+                os.remove(old)  # the host switched between PNG and JPEG
+            os.replace(path + ".tmp", path)
+        except OSError as e:
+            print(f"Box art: couldn't save {app_id}: {e}")
+
+# Moonlight's own icon, from its install (nothing is copied into Lunapad). The
+# Debian package ships only an SVG; PNGs are used if a future one adds them.
+MOONLIGHT_ICONS = ["/usr/share/icons/hicolor/scalable/apps/moonlight.svg",
+                   "/usr/share/icons/hicolor/scalable/apps/com.moonlight_stream.Moonlight.svg"]
+_moonlight_icon_cache = {}
+
+def _svg_sized(data, height):
+    """The SVG with its root size set to `height` px tall (keeping its shape), so
+    SDL_image renders it sharp at that size instead of at the file's own size."""
+    m = re.search(rb"<svg\b[^>]*>", data)
+    if not m:
+        return data
+    tag = m.group(0)
+    def attr(name):
+        a = re.search(rb"\s" + name + rb'\s*=\s*"([^"]*)"', tag)
+        return a.group(1) if a else None
+    box = attr(b"viewBox")
+    if box:
+        vw, vh = (float(n) for n in box.replace(b",", b" ").split()[2:4])
+    else:
+        vw, vh = (float(re.match(rb"[\d.]+", attr(n) or b"100").group(0)) for n in (b"width", b"height"))
+    new = re.sub(rb'\s(width|height)\s*=\s*"[^"]*"', b"", tag)
+    sized = f' width="{round(height * vw / vh)}" height="{height}"'.encode()
+    if not box:
+        sized += f' viewBox="0 0 {vw:g} {vh:g}"'.encode()
+    new = new[:4] + sized + new[4:]
+    return data[:m.start()] + new + data[m.end():]
+
+def moonlight_icon_surface(height):
+    """Moonlight's installed icon at `height` px, or None (switched off, not
+    installed, or unreadable). Cached per size."""
+    if not cfg.get("apps.moonlight_icon"):
+        return None
+    if height not in _moonlight_icon_cache:
+        icon = None
+        def png_size(p):  # .../hicolor/256x256/apps/x.png -> 256
+            m = re.match(r"(\d+)x\d+", p.split("/")[-3])
+            return int(m.group(1)) if m else 0
+        pngs = sorted(glob.glob("/usr/share/icons/hicolor/*/apps/*oonlight*.png"), key=png_size)
+        try:
+            if pngs:
+                img = pygame.image.load(pngs[-1]).convert_alpha()
+                icon = pygame.transform.smoothscale(img, (round(img.get_width() * height / img.get_height()), height))
+            else:
+                path = next((p for p in MOONLIGHT_ICONS if os.path.exists(p)), None)
+                if path:
+                    with open(path, "rb") as f:
+                        icon = pygame.image.load(io.BytesIO(_svg_sized(f.read(), height)), "icon.svg").convert_alpha()
+        except Exception as e:
+            print(f"Moonlight icon: couldn't load it: {e}")
+        _moonlight_icon_cache[height] = icon
+    return _moonlight_icon_cache[height]
+
+_box_art_cache = {}
+
+def box_art_surface(app_name, height):
+    """The app's box art scaled to `height` (keeping its shape, rounded corners),
+    or None: no art downloaded, box art switched off, or unreadable. Cached, and
+    reloaded when the file changes."""
+    app_id = host_app_ids.get(app_name)
+    if app_id is None or not cfg.get("apps.box_art"):
+        return None
+    path = box_art_path(app_id)
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return None
+    key = (app_id, height, mtime)
+    if key not in _box_art_cache:
+        try:
+            img = pygame.image.load(path).convert_alpha()
+            width = max(1, round(img.get_width() * height / img.get_height()))
+            art = pygame.transform.smoothscale(img, (width, height))
+            mask = pygame.Surface(art.get_size(), pygame.SRCALPHA)
+            pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=10)
+            art.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+            _box_art_cache[key] = art
+        except Exception as e:
+            print(f"Box art: couldn't load {path}: {e}")
+            _box_art_cache[key] = None
+    return _box_art_cache[key]
 
 def fetch_app_ids():
     """{app name: Sunshine app ID}, or None: straight from the host, falling back
@@ -866,9 +999,10 @@ def save_apps_cache():
 
 _ids_fetching = False
 
-def refresh_app_ids_background():
+def refresh_app_ids_background(refresh_art=False):
     """Updates host_app_ids (used to spot a running session) without ever
-    blocking the app list: keeps the IDs already known if --csv stalls."""
+    blocking the app list: keeps the IDs already known if --csv stalls. Then
+    downloads any missing box art (all of it again if `refresh_art`)."""
     global _ids_fetching
     if _ids_fetching:
         return
@@ -882,14 +1016,16 @@ def refresh_app_ids_background():
                 merged = {**host_app_ids, **ids}
                 host_app_ids = {name: merged[name] for name in host_apps if name in merged}
                 save_apps_cache()
+            if cfg.get("apps.box_art"):
+                fetch_box_art(list(host_app_ids.values()), refresh=refresh_art)
         finally:
             _ids_fetching = False
     threading.Thread(target=worker, daemon=True).start()
 
-def refresh_host_apps():
+def refresh_host_apps(refresh_art=False):
     """Re-reads the host's app names into host_apps (and the cache), then
-    refreshes their IDs in the background. Returns the names, or None if the
-    host couldn't be asked."""
+    refreshes their IDs (and box art) in the background. Returns the names, or
+    None if the host couldn't be asked."""
     global host_apps, last_apps_fetch
     last_apps_fetch = time.time()
     names = fetch_host_apps()
@@ -898,7 +1034,7 @@ def refresh_host_apps():
     if names != host_apps:
         host_apps = names
         save_apps_cache()
-    refresh_app_ids_background()
+    refresh_app_ids_background(refresh_art)
     return names
 
 def reload_apps():
@@ -914,7 +1050,7 @@ def reload_apps():
         show_status_popup(f"Host unreachable - showing {len(host_apps)} saved apps")
         pygame.time.wait(2500)
         return
-    apps = refresh_host_apps()
+    apps = refresh_host_apps(refresh_art=True)  # Reload Apps also picks up changed box art
     pygame.event.clear()  # drop presses made while it was busy
     if apps is None:
         show_status_popup(f"Couldn't read apps - showing {len(host_apps)} saved apps")
@@ -1144,7 +1280,9 @@ def draw_panel(x, y, pw, ph):
     pygame.draw.rect(panel, (*PANEL_BG, 210), panel.get_rect(), border_radius=20)
     screen.blit(panel, (x, y))
 
-def draw_tile(rect, label, is_selected, danger=False):
+def draw_tile(rect, label, is_selected, danger=False, text_rect=None):
+    """A tile with `label` centred in `text_rect` (default: the whole tile)."""
+    text_rect = text_rect or rect
     if is_selected:
         pygame.draw.rect(screen, ACCENT, rect, border_radius=16)
         text_color = (10, 10, 15)
@@ -1152,8 +1290,8 @@ def draw_tile(rect, label, is_selected, danger=False):
         pygame.draw.rect(screen, TILE_BG, rect, border_radius=16)
         pygame.draw.rect(screen, DIVIDER, rect, width=1, border_radius=16)
         text_color = BAD if danger else TEXT
-    text_surf = fit_text(label, (item_font, subtitle_font), text_color, rect.width - 40)
-    screen.blit(text_surf, text_surf.get_rect(center=rect.center))
+    text_surf = fit_text(label, (item_font, subtitle_font), text_color, text_rect.width - 40)
+    screen.blit(text_surf, text_surf.get_rect(center=text_rect.center))
     return text_surf
 
 def draw_clock(margin, title_y, title_h):
@@ -1343,13 +1481,30 @@ def draw_frame():
                                                grid_w if alone else half_w, tile_h)
     tile_rects["moonlight"] = pygame.Rect(grid_x, grid_top + app_rows * (tile_h + tile_gap), grid_w, tile_h)
     for key, rect in tile_rects.items():
-        draw_tile(rect, node_label(key), selected == key)
+        # box art on the left of an app tile (full cover, tile height), name beside it
+        art_inset = 10
+        art_h = rect.height - art_inset * 2
+        if key.startswith("app:"):
+            art = box_art_surface(key[4:], art_h)
+        elif key == "moonlight":
+            art = moonlight_icon_surface(art_h)
+        else:
+            art = None
+        text_rect = rect
+        if art:
+            text_left = rect.x + art_inset + art.get_width()
+            text_rect = pygame.Rect(text_left, rect.y, rect.right - text_left, rect.height)
+        draw_tile(rect, node_label(key), selected == key, text_rect=text_rect)
+        if art:
+            screen.blit(art, (rect.x + art_inset, rect.y + art_inset))
         if running and key == app_key(running):
             # the app with a session running on the host: outline + resume hint
             pygame.draw.rect(screen, ACCENT, rect, width=3, border_radius=16)
             hint_color = (10, 10, 15) if selected == key else ACCENT
             hint_surf = hint_font.render("RUNNING  -  A resume  -  B quit", True, hint_color)
-            screen.blit(hint_surf, hint_surf.get_rect(midbottom=(rect.centerx, rect.bottom - 14)))
+            if hint_surf.get_width() > text_rect.width - 20:
+                hint_surf = hint_font.render("RUNNING", True, hint_color)
+            screen.blit(hint_surf, hint_surf.get_rect(midbottom=(text_rect.centerx, rect.bottom - 14)))
 
     # Settings: a chip at the top-right of the host panel
     chip_selected = selected == "settings"
