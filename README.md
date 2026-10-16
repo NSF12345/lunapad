@@ -4,29 +4,30 @@ A gamepad-only launcher that turns a Raspberry Pi 4 into a TV box for streaming 
 
 ![The Lunapad dashboard: app tiles from the gaming PC, connected controllers, and system utilities](docs/images/dashboard.png)
 
-> **This project was vibecoded** - I want to be upfront that a lot of
-> this was built through conversation with an AI assistant (Claude).
-> I understand people have mixed feelings about AI-assisted code, and
-> generally agree with those feelings. But for a personal, one-off
-> homelab project like this - something you just want to get up and
-> running - I think it's a genuinely great tool to have at my
-> disposal.
+> **This project was vibecoded.** Much of the code and documentation was
+> written with AI assistance (Claude, via Claude Code), and commits it helped
+> with are marked `Co-Authored-By: Claude`. I know people have mixed feelings
+> about AI-written code, and I share some of them. But for a personal homelab
+> project like this, something you just want up and running, it's a genuinely
+> great tool to have.
 >
-> I have taken great care to review & understand all code changes
-> made by AI tools within this project.
+> I review every change before it's merged, and test it on a Raspberry Pi with
+> real controllers and a real Sunshine host. Every pull request also runs
+> automated lint, security and secret-scanning checks. As the maintainer, I'm
+> still responsible for everything in this repo.
 
 ## Features
 
-- **Dashboard** — one tile per app on the host (from `moonlight-qt list`, cached for when the host is off), plus connected controllers with Bluetooth and battery status
-- **Box art** — each app tile shows the image set for that app in Sunshine. Lunapad downloads it from Sunshine on your gaming PC (the same images Moonlight shows), and doesn't include any game art itself. To change an app's image, edit it in Sunshine (**Applications** → the app → **Image**), then press **Reload Apps**. The Moonlight Window tile shows Moonlight's own icon, from Moonlight's install on the Pi. Both can be turned off in **Settings → Apps**, which can also hide the Moonlight Window tile altogether
-- **Bluetooth page** — list, scan for, pair, connect, disconnect and forget gamepads
-- **Update** — updates Lunapad itself from GitHub (the **Stable** or **Beta** channel, chosen in Settings → Updates), and the Pi's apt packages, with live output. After a system update it offers to remove packages no longer needed (old kernels), showing the list first
-- **Reload Apps** — re-read the host's app list now, instead of waiting for the 10-minute auto-refresh
-- **Settings** — the Settings chip in the host panel opens a gamepad settings page: host address, stream resolution / fps / bitrate / codec / audio / overlay and other stream options, the launcher's screen resolution, and idle timings. Everything is saved in the `lunapad` account's `~/.config/lunapad/lunapad.toml`
-- **Moonlight check** — if Moonlight Qt isn't installed, the host panel says so and launching explains how to install it (Lunapad never installs it). An install older than 6.2.0 gets a warning, since new host apps only appear from 6.2.0
-- **Pairing** — if the Pi isn't paired with the host, the host line says so; pressing A on an app, or **Settings > Pair with host**, shows a PIN to enter in Sunshine's web page (PIN tab) and pairs without opening Moonlight
-- **Running sessions** — if an app is still running on the host (e.g. you left a stream without quitting), the host line and its tile say so. A resumes it (or quits it), B quits it, and launching a different app offers to close it first
-- **Idle dim** — after 5 minutes idle the screen dims, and after 5 more it fades to black (burn-in protection; both times are in Settings). The first input wakes it without triggering an action
+- **Dashboard**: one tile per app on the host (from `moonlight-qt list`, cached for when the host is off), plus connected controllers with Bluetooth and battery status
+- **Box art**: each app tile shows the image set for that app in Sunshine. Lunapad downloads it from Sunshine on your gaming PC (the same images Moonlight shows), and doesn't include any game art itself. To change an app's image, edit it in Sunshine (**Applications** → the app → **Image**), then press **Reload Apps**. The Moonlight Window tile shows Moonlight's own icon, from Moonlight's install on the Pi. Both can be turned off in **Settings → Apps**, which can also hide the Moonlight Window tile altogether
+- **Bluetooth page**: list, scan for, pair, connect, disconnect and forget gamepads
+- **Update**: updates Lunapad itself from GitHub (the **Stable** or **Beta** channel, chosen in Settings → Updates), and the Pi's apt packages, with live output. After a system update it offers to remove packages no longer needed (old kernels), showing the list first
+- **Reload Apps**: re-read the host's app list now, instead of waiting for the 10-minute auto-refresh
+- **Settings**: the Settings chip in the host panel opens a gamepad settings page: host address, stream resolution / fps / bitrate / codec / audio / overlay and other stream options, the launcher's screen resolution, and idle timings. Everything is saved in the `lunapad` account's `~/.config/lunapad/lunapad.toml`
+- **Moonlight check**: if Moonlight Qt isn't installed, the host panel says so and launching explains how to install it (Lunapad never installs it). An install older than 6.2.0 gets a warning, since new host apps only appear from 6.2.0
+- **Pairing**: if the Pi isn't paired with the host, the host line says so; pressing A on an app, or **Settings > Pair with host**, shows a PIN to enter in Sunshine's web page (PIN tab) and pairs without opening Moonlight
+- **Running sessions**: if an app is still running on the host (e.g. you left a stream without quitting), the host line and its tile say so. A resumes it (or quits it), B quits it, and launching a different app offers to close it first
+- **Idle dim**: after 5 minutes idle the screen dims, and after 5 more it fades to black (burn-in protection; both times are in Settings). The first input wakes it without triggering an action
 
 ## Screenshots
 
@@ -178,7 +179,7 @@ A pad SDL doesn't recognise falls back to raw input with a basic guess: button 0
 
 ## Restarting on the Pi
 
-Don't launch `lunapad.py` by hand while the tty1 loop is running — two instances fight over the display. Instead:
+Don't launch `lunapad.py` by hand while the tty1 loop is running: two instances fight over the display. Instead:
 
 ```sh
 sudo pkill -9 -u lunapad -f lunapad/lunapad.py   # the tty1 loop relaunches it
