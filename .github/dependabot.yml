@@ -7,3 +7,8 @@ updates:
     target-branch: beta
     schedule:
       interval: monthly
+    groups:
+      # CodeQL's init and analyze steps must be the same version: update them together
+      codeql:
+        patterns:
+          - "github/codeql-action*"
