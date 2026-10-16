@@ -1,4 +1,4 @@
-import os, sys, re, csv, random, shutil, subprocess, threading, time, json, socket, ipaddress, glob, pygame
+import os, sys, re, csv, math, random, shutil, subprocess, threading, time, json, socket, ipaddress, glob, pygame
 import ssl, uuid, tempfile, http.client, io
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -310,10 +310,35 @@ BAD = THEME["bad"]
 DIVIDER = THEME["divider"]
 
 BLUETOOTH_BLUE = (0, 130, 252)
+SETTINGS_ICON_COLOR = MUTED
 # The Bluetooth symbol as one line through six points, in a box 1 wide x 1 tall:
 # left tip, lower right, bottom, top, upper right, left tip.
 _BLUETOOTH_RUNE = [(0.14, 0.30), (0.92, 0.72), (0.5, 0.96), (0.5, 0.04), (0.92, 0.28), (0.14, 0.70)]
 _BLUETOOTH_ICON_CACHE = {}
+
+_COG_ICON_CACHE = {}
+
+def draw_cog_icon(surface, center, size, color):
+    """A settings cog, `size` px across, centred on `center`: 8 teeth around a
+    ring with a hole. Drawn at 4x and scaled down; cached per size/colour."""
+    key = (size, color)
+    if key not in _COG_ICON_CACHE:
+        ss, teeth = 4, 8
+        big_size = size * ss
+        c = big_size / 2
+        outer, body, hole = big_size * 0.48, big_size * 0.36, big_size * 0.15
+        pitch = 2 * math.pi / teeth
+        pts = []
+        for i in range(teeth):
+            a = i * pitch
+            for r, da in ((body, -0.27), (outer, -0.17), (outer, 0.17), (body, 0.27), (body, 0.5)):
+                pts.append((c + r * math.cos(a + da * pitch), c + r * math.sin(a + da * pitch)))
+        big = pygame.Surface((big_size, big_size), pygame.SRCALPHA)
+        pygame.draw.polygon(big, color, pts)
+        pygame.draw.circle(big, (0, 0, 0, 0), (c, c), hole)  # punch the hole (transparent)
+        _COG_ICON_CACHE[key] = pygame.transform.smoothscale(big, (size, size))
+    icon = _COG_ICON_CACHE[key]
+    surface.blit(icon, icon.get_rect(center=center))
 
 def draw_bluetooth_icon(surface, center, size, color):
     """The Bluetooth symbol, `size` px tall, centred on `center`. Drawn at 4x and
@@ -2215,7 +2240,9 @@ def draw_settings_page(rows, sel, scroll):
     screen.fill(THEME["bg"])
     margin = 60
     title = title_font.render("Settings", True, TEXT)
-    screen.blit(title, (margin, 36))
+    icon_h = round(title.get_height() * 0.8)
+    draw_cog_icon(screen, (margin + icon_h // 2, 36 + title.get_height() // 2), icon_h, SETTINGS_ICON_COLOR)
+    screen.blit(title, (margin + icon_h + 16, 36))
     draw_clock(margin, 36, title.get_height())
     shown_path = cfg.CONFIG_FILE.replace(cfg.HOME, "~", 1)
     note = fit_text(f"{VERSION_TEXT}  -  saved in {shown_path} (other settings can be edited there)",
