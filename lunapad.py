@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 import settings as cfg
 from settings import STATE_FILE, APPS_CACHE_FILE
 
-__version__ = "0.7.1"
+__version__ = "0.7.2"
 APP_DIR = os.path.dirname(os.path.abspath(__file__))  # /opt/lunapad on the Pi: code and images
 
 def _read_build():
