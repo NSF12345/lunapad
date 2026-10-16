@@ -1,0 +1,38 @@
+# Publishes a release when main gets a new version: reads __version__ from
+# lunapad.py and, if there's no vX.Y.Z tag for it yet, tags the commit and
+# creates the GitHub release (notes list the merged PRs). Merges that don't
+# change the version (syncs, docs) find the tag already there and do nothing.
+# To release: bump __version__ (PR into beta), then merge beta into main.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write  # create the tag and the release
+
+jobs:
+  release:
+    name: Tag and release a new version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0  # all tags, to see whether this version is already released
+      - name: Release the version in lunapad.py, if it's new
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(sed -n 's/^__version__ = "\([0-9]*\.[0-9]*\.[0-9]*\)"$/\1/p' lunapad.py)"
+          if [ -z "$version" ]; then
+            echo "::error::No X.Y.Z __version__ found in lunapad.py"
+            exit 1
+          fi
+          tag="v$version"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag is already released - nothing to do"
+            exit 0
+          fi
+          gh release create "$tag" --target "$GITHUB_SHA" --title "Lunapad $version" --generate-notes
+          echo "Released $tag at $GITHUB_SHA"
