@@ -1,4 +1,4 @@
-# Lunapad — working notes
+# Lunapad: working notes
 
 Gamepad-only Moonlight launcher on a Raspberry Pi 4 (pygame, `SDL_VIDEODRIVER=kmsdrm`, no desktop). See README.md for features and layout.
 
