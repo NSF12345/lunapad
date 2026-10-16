@@ -26,6 +26,7 @@ Gamepad-only Moonlight launcher on a Raspberry Pi 4 (pygame, `SDL_VIDEODRIVER=km
 - **Never launch `lunapad.py` by hand while the tty1 loop runs.** Two instances fight over DRM master. (By hand would also mean as the wrong account.)
 - A few rapid restarts right after `kill -9` are a transient kmsdrm lock race. They settle on their own.
 - Exit code 99 (the on-screen Exit) breaks the tty1 loop. To recover: `sudo systemctl restart getty@tty1` (autologin starts the loop again), or reboot.
+- The UI is always laid out and drawn at 1920x1080 (`UI_SIZE`): `open_display()` asks SDL for `FULLSCREEN | SCALED`, so the GPU scales it to the TV's mode, like Kodi's "limit GUI size" on a Pi. If that fails it falls back to an off-screen 1920x1080 surface that `_flip()` smoothscales to the real screen. Never lay anything out for another size: the old Screen resolution setting crashed at 720p (negative panel height) and drew everything tiny at 4K.
 - `SDL_VIDEODRIVER=dummy` ignores the requested resolution, which breaks layout math (e.g. "Invalid resolution for Surface"). Don't use it to judge layout.
 - Screenshots: `/dev/fb0` shows the console, not the app. There's no capture hook now (the old one-shot hook on the Bluetooth page is in the private repo's history if ever needed).
 - Non-ASCII text sent through `plink` gets corrupted to `?`. Use `chr(0x16BC)`-style escapes.
