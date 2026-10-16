@@ -164,7 +164,7 @@ On the Pi, the program lives in `/opt/lunapad/` and runs as the `lunapad` accoun
 
 ## Releases and update channels
 
-- **Stable** follows release tags: the highest `vX.Y.Z` tag. To release, merge into `main`, set `__version__` in `lunapad.py`, and tag that commit `vX.Y.Z`.
+- **Stable** follows release tags: the highest `vX.Y.Z` tag. To release, bump `__version__` in `lunapad.py` (a PR into `beta`), then merge `beta` into `main`. The **Release** workflow (`.github/workflows/release.yml`) then tags that commit `vX.Y.Z` and publishes the GitHub release, listing the merged PRs. Merges into `main` that don't change the version do nothing.
 - **Beta** follows the tip of the `beta` branch, so whatever lands there reaches beta Pis on their next update check.
 - Work happens on feature branches that merge into `beta` and then `main`.
 
