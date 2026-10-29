@@ -4,10 +4,10 @@ A gamepad-only launcher that turns a Raspberry Pi 4 into a TV box for streaming 
 
 ![The Lunapad dashboard: app tiles from the gaming PC, connected controllers, and system utilities](docs/images/dashboard.png)
 
-> **This project was vibecoded.** Much of the code and documentation was
-> written with AI assistance (Claude, via Claude Code), and commits it helped
+> **LLM assisted this with project.** Much of the code and documentation was
+> written with Large Language Models (mostly Claude, via Claude Code), and commits it helped
 > with are marked `Co-Authored-By: Claude`. I know people have mixed feelings
-> about AI-written code, and I share some of them. But for a personal homelab
+> about LLM-written code, and I share some of them. But for a personal homelab
 > project like this, something you just want up and running, it's a genuinely
 > great tool to have.
 >
